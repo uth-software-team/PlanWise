@@ -3,7 +3,7 @@
 General rules (approval workflow, git, security, source of truth) are in the root `CLAUDE.md`. This file adds backend rules.
 
 ## Stack
-Java 21, Spring Boot 3.x, Spring Security, Spring Data JPA, Bean Validation, Flyway, Lombok (only if already used). Build: **Gradle**.
+Java 25, Spring Boot 4.1.x, Spring Security, Spring Data JPA, Bean Validation, Flyway (planned, not yet in build.gradle), Lombok (only if already used). Build: **Gradle 9.8** (wrapper).
 DB: PostgreSQL 16, UUID PKs, IANA timezone support. No Redis for MVP.
 Check `build.gradle` before adding dependencies. Never bump versions or swap working libraries.
 

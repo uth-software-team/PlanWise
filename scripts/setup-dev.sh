@@ -91,7 +91,7 @@ if command -v java >/dev/null 2>&1; then
   echo -e "  [✔] Java đã được cài đặt: ${GREEN}${JAVA_VER}${NC}"
 else
   echo -e "  ${RED}[✘] Không tìm thấy Java trên máy!${NC}"
-  echo -e "      Dự án yêu cầu Java 21 hoặc 25 (Khuyên dùng Java 25)."
+  echo -e "      Dự án yêu cầu Java 25."
   echo -e "      👉 Bạn có thể cài qua Homebrew: ${YELLOW}brew install openjdk@25${NC}"
   exit 1
 fi

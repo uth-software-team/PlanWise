@@ -5,10 +5,10 @@ Reply to the user in **Vietnamese**. Keep code, identifiers, API names, commit m
 Module-specific rules: `Code/backend/CLAUDE.md`, `Code/frontend/CLAUDE.md`.
 
 ## Repo Layout
-- `Code/backend/` — Spring Boot backend (current focus).
+- `Code/backend/` — Spring Boot backend (current focus). Stack: Java 25, Spring Boot 4.1.x, Gradle 9.8 (wrapper), PostgreSQL / H2 (dev).
 - `Code/frontend/` — React frontend (NOT started).
 - `scripts/` — helper scripts. Read before running; never run destructive ones without approval.
-- `PlanWise Document/` — design docs (Word). Read-only: never edit original Word files.
+- `PlanWise Document/` — design docs (Word, images). Local only, not committed to the repo. Read-only: never edit original Word files.
 Do not move/rename top-level folders.
 
 ## Golden Rule
@@ -28,8 +28,8 @@ Do NOT build frontend unless explicitly asked.
 
 ## Source of Truth (priority)
 1. Latest instruction from the user. 2. Newer team-approved decisions.
-3. `PlanWise Document/PlanWise_AI_Design_UseCase_ClassDiagram_ERD.docx` (Nov 2026: use cases, class diagram, ERD, data dictionary, BR-01..BR-32).
-4. `PlanWise Document/PlanWise AI Project.docx` (handover 2026-10-30, partly outdated).
+3. `PlanWise Document/PlanWise AI Document .docx` (Nov 2026: use cases, class diagram, ERD, data dictionary, BR-01..BR-32).
+4. `PlanWise Document/PlanWise AI Project.docx` (handover 2026-10-30, partly outdated; not available locally).
 5. Your own proposals.
 Code shows implementation status but does not override approved requirements. On conflicts, report them with options; never pick silently. If docs are unreadable, say so; never claim to have read them.
 
