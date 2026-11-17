@@ -77,6 +77,7 @@ PlanWise/
 git clone https://github.com/uth-software-team/PlanWise.git
 cd PlanWise
 git checkout develop
+bash scripts/install-hooks.sh     # BẮT BUỘC, chạy 1 lần sau khi clone: bật git hooks kiểm tra Git Flow
 
 ./scripts/setup-dev.sh            # Kiểm tra công cụ, tạo .env từ .env.example, build thử backend (dùng H2)
 ./scripts/setup-dev.sh --docker   # Như trên + bật PostgreSQL bằng Docker (port 5432)
@@ -121,6 +122,11 @@ Copy `Code/backend/.env.example` thành `Code/backend/.env` rồi chỉnh (scrip
   — `type`: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `build`
   — ví dụ: `feat(schedule): add conflict check on confirm`
 - Đồng bộ với `develop` mới nhất trước khi mở PR. Xóa nhánh sau khi merge.
+
+**Kiểm tra tự động**
+- *Git hooks* (`scripts/git-hooks/`, cài bằng `bash scripts/install-hooks.sh`): chặn commit/push thẳng lên `main`/`develop`, chặn commit `.env`/key/build output, bắt commit message đúng Conventional Commits, kiểm tra tên nhánh.
+- *CI* (`.github/workflows/gitflow-check.yml`): mỗi PR được kiểm tra tên nhánh, nhánh đích, commit message, file nhạy cảm và chạy `./gradlew build`.
+- *Branch protection* trên GitHub: `main`/`develop` chỉ nhận thay đổi qua PR đã được review và CI pass.
 
 **Luồng cơ bản**
 ```bash
