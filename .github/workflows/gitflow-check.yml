@@ -1,0 +1,94 @@
+name: gitflow-check
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  gitflow:
+    name: gitflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check branch name and target
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          echo "PR: $HEAD_REF -> $BASE_REF"
+          if [[ "$HEAD_REF" =~ ^(feature|fix|test|docs)/[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+            allowed="develop"
+          elif [[ "$HEAD_REF" =~ ^release/v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            allowed="main develop"
+          elif [[ "$HEAD_REF" =~ ^hotfix/[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+            allowed="main develop"
+          else
+            echo "::error::Invalid branch name '$HEAD_REF'. Use feature|fix|test|docs|hotfix/<kebab-case> or release/<x.y.z>."
+            exit 1
+          fi
+          if [[ " $allowed " != *" $BASE_REF "* ]]; then
+            echo "::error::'$HEAD_REF' may only be merged into: $allowed (got '$BASE_REF')."
+            exit 1
+          fi
+
+      - name: Check commit messages (Conventional Commits)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^(feat|fix|test|refactor|docs|chore|build)(\([a-z0-9-]+\))?!?: .{1,100}$'
+          bad=0
+          while IFS= read -r subject; do
+            [[ -z "$subject" ]] && continue
+            [[ "$subject" =~ ^(Revert |fixup! |squash! ) ]] && continue
+            if [[ ! "$subject" =~ $pattern ]]; then
+              echo "::error::Invalid commit message: $subject"
+              bad=1
+            fi
+          done < <(git log --no-merges --format=%s "$BASE_SHA..$HEAD_SHA")
+          exit $bad
+
+      - name: Check for sensitive or generated files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bad=0
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            base="$(basename "$f")"
+            if [[ "$base" =~ ^\.env(\..+)?$ && "$base" != ".env.example" ]] \
+               || [[ "$base" =~ \.(pem|key|p12|jks)$ ]] \
+               || [[ "$base" == ".DS_Store" ]] \
+               || [[ "$f" =~ (^|/)(build|out|target|dist|node_modules|\.gradle|\.idea)/ ]]; then
+              echo "::error file=$f::Sensitive or generated file must not be committed: $f"
+              bad=1
+            fi
+          done < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA...$HEAD_SHA")
+          exit $bad
+
+  backend-build:
+    name: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Code/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Build and test
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon

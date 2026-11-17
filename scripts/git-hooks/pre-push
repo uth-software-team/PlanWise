@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# PlanWise Git Flow guard: block pushes to protected branches and invalid branch names.
+set -euo pipefail
+
+RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
+
+branch_pattern='^((feature|fix|test|docs|hotfix)/[a-z0-9]+(-[a-z0-9]+)*|release/v?[0-9]+\.[0-9]+\.[0-9]+)$'
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ "$remote_ref" != refs/heads/* ]] && continue   # tags etc. are fine
+  target="${remote_ref#refs/heads/}"
+
+  if [[ "$target" == "main" || "$target" == "develop" ]]; then
+    if [[ "${ALLOW_PROTECTED_PUSH:-}" != "1" ]]; then
+      echo -e "${RED}✘ Không được push trực tiếp lên '$target'.${NC} Hãy push nhánh riêng và mở Pull Request."
+      status=1
+    fi
+    continue
+  fi
+
+  if [[ ! "$target" =~ $branch_pattern ]]; then
+    echo -e "${RED}✘ Tên nhánh không hợp lệ: '$target'${NC}"
+    echo -e "  Hợp lệ: ${YELLOW}feature|fix|test|docs|hotfix/<kebab-case>${NC} hoặc ${YELLOW}release/<x.y.z>${NC}"
+    echo -e "  Đổi tên: ${YELLOW}git branch -m <ten-moi>${NC}"
+    status=1
+  fi
+done
+
+exit $status

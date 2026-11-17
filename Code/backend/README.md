@@ -213,7 +213,7 @@ if (!project.getOwnerId().equals(currentUserId)) {
 ## 6. Hướng dẫn Cài đặt & Chạy ứng dụng
 
 ### 6.1. Yêu cầu môi trường
-- **Java**: 25 (hoặc Java 21+ tương thích Spring Boot 4)
+- **Java**: 25
 - **Gradle**: Wrapper đi kèm dự án (`./gradlew`)
 
 ### 6.2. Cấu hình biến môi trường
