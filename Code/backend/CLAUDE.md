@@ -11,8 +11,18 @@ Check `build.gradle` before adding dependencies. Never bump versions or swap wor
 - Build: `./gradlew build`
 - Test: `./gradlew test` (single: `./gradlew test --tests "ClassName"`)
 - Run: `./gradlew bootRun`
-- DB: `docker compose up -d` (only if a compose file exists)
+- DB: `docker compose up -d` (only if a compose file exists), or `./scripts/setup-dev.sh --docker` from repo root
 Never run migrations or data-changing commands without approval.
+
+## Configuration & Environment
+- `Code/backend/.env` (KEY=VALUE) is loaded automatically via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. Precedence: real OS env vars > `.env` > defaults in `application.properties`.
+- No `.env` -> fallback to H2 in-memory (`jdbc:h2:mem:planwise`). Never rely on this silently: when PostgreSQL is expected, confirm it.
+- Keys: `SERVER_PORT` (default 8080), `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JPA_DDL_AUTO`, `JWT_SECRET`, `JWT_EXPIRATION_MINUTES`, `CORS_ALLOWED_ORIGINS`.
+- Local PostgreSQL: container `planwise-postgres` (PostgreSQL 16), DB `planwise_ai`, user `planwise_user`, port 5432. `setup-dev.sh --docker` creates the container from the DB name/user/password in `.env`, so keep them in sync.
+- `.env` is personal and secret: never read, print, edit, or commit it. To check it, compare against the container config without printing values. New keys go to `.env.example` with placeholders only.
+- Verify a PostgreSQL connection by running `./gradlew bootRun` and checking the log for `HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection` (`jdbc:h2` = fell back to H2), plus `pg_stat_activity` on the DB side. Stop the app afterwards.
+- Port 8080 may be taken by another local service (e.g. nginx); use `SERVER_PORT` instead of changing code.
+- `POSTGRES_PASSWORD` on the container only applies when its data volume is first initialized; if the volume is recreated, update `DB_PASSWORD` in `.env` to match.
 
 ## Architecture
 Modular Monolith + Layered: Controller -> Service -> Repository -> PostgreSQL.
@@ -73,6 +83,8 @@ Modular Monolith + Layered: Controller -> Service -> Repository -> PostgreSQL.
 
 ## Testing
 - JUnit. Mockito / Spring Boot Test / Testcontainers only after checking existing deps and getting approval to add.
+- Every `@SpringBootTest` (and other Spring context tests) MUST use `@ActiveProfiles("test")`. The `test` profile (`src/test/resources/application-test.properties`) forces an isolated H2 DB (`jdbc:h2:mem:planwise_test`, `create-drop`), so tests never touch the developer's PostgreSQL even when `.env` exists. Never point tests at the dev DB.
+- Run `./gradlew clean build` if tests fail with stale-class errors (e.g. "Unable to find a @SpringBootConfiguration").
 - Cover: valid/invalid input, edge cases, invalid states, missing permission, not found, DB constraints, conflicts/concurrency, API responses, cross-module behavior.
 - Scheduling: overlap, deadline, availability, confirmed sessions, overload, concurrency.
 - Assignment: accept, decline, revoke, permissions.
