@@ -192,11 +192,18 @@ if [ "$START_DOCKER" = true ]; then
         echo -e "  [✔] Đã start container ${GREEN}${CONTAINER_NAME}${NC}."
       fi
     else
-      echo -e "  [i] Đang kéo image và khởi tạo container PostgreSQL mới (${CONTAINER_NAME})..."
+      # Lấy thông tin DB từ Code/backend/.env để container khớp với cấu hình backend
+      env_val() { grep -E "^$1=" "${BACKEND_DIR}/.env" 2>/dev/null | tail -n 1 | cut -d= -f2-; }
+      PG_URL="$(env_val DB_URL)"
+      PG_DB="${PG_URL##*/}"; PG_DB="${PG_DB%%\?*}"
+      PG_DB="${PG_DB:-planwise_ai}"
+      PG_USER="$(env_val DB_USERNAME)"; PG_USER="${PG_USER:-planwise_user}"
+      PG_PASS="$(env_val DB_PASSWORD)"; PG_PASS="${PG_PASS:-change-me-local-db-password}"
+      echo -e "  [i] Đang kéo image và khởi tạo container PostgreSQL mới (${CONTAINER_NAME}, db=${PG_DB}, user=${PG_USER})..."
       docker run --name "${CONTAINER_NAME}" \
-        -e POSTGRES_DB=planwise \
-        -e POSTGRES_USER=postgres \
-        -e POSTGRES_PASSWORD=postgres \
+        -e POSTGRES_DB="${PG_DB}" \
+        -e POSTGRES_USER="${PG_USER}" \
+        -e POSTGRES_PASSWORD="${PG_PASS}" \
         -p 5432:5432 \
         -d postgres:16-alpine
       echo -e "  [✔] Đã tạo và khởi chạy container ${GREEN}${CONTAINER_NAME}${NC} thành công tại port 5432."
