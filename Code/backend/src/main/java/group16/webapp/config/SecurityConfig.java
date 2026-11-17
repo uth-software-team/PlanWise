@@ -73,8 +73,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/v1/users").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/v1/users/**").hasRole("ADMIN")
+                        // No system-wide roles (actors are Guest/User only). LEADER/MEMBER are per-group
+                        // and are enforced in the service layer by groupId, not by URL rules here.
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))

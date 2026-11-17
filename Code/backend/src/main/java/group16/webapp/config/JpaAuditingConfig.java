@@ -1,21 +1,14 @@
 package group16.webapp.config;
 
-import group16.webapp.common.util.SecurityUtils;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
 /**
- * Auto-fills BaseEntity audit columns:
- * createdAt/updatedAt (time) and createdBy/updatedBy (id of the logged-in user).
+ * Enables @CreatedDate / @LastModifiedDate (see common/entity/AuditableEntity).
+ * No AuditorAware: the ERD has no created_by/updated_by columns; ownership is stored
+ * explicitly per table (e.g. tasks.owner_user_id).
  */
 @Configuration
-@EnableJpaAuditing(auditorAwareRef = "auditorAware")
+@EnableJpaAuditing
 public class JpaAuditingConfig {
-
-    @Bean
-    public AuditorAware<Long> auditorAware() {
-        return SecurityUtils::getCurrentUserId;
-    }
 }
