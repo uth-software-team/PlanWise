@@ -41,20 +41,21 @@ src/main/java/group16/webapp/
 │   │   ├── ApiResponse.java         # Envelope bọc toàn bộ JSON response chuẩn
 │   │   └── PageResponse.java        # Chuẩn hóa cấu trúc phân trang trả về
 │   ├── entity/
-│   │   └── BaseEntity.java          # @MappedSuperclass (id, createdAt, updatedAt, createdBy, updatedBy)
+│   │   ├── BaseEntity.java          # @MappedSuperclass: id BIGINT identity
+│   │   └── AuditableEntity.java     # BaseEntity + createdAt/updatedAt (TIMESTAMPTZ, tự động điền)
 │   ├── exception/
 │   │   ├── ErrorCode.java           # Danh mục mã lỗi tập trung (HTTP status + message mặc định)
 │   │   ├── AppException.java        # Exception nghiệp vụ duy nhất được throw
 │   │   └── GlobalExceptionHandler.java # Bắt mọi lỗi và convert về ApiResponse chuẩn
 │   └── util/
 │       ├── SecurityUtils.java       # Lấy thông tin user hiện tại (ID, email, roles) từ JWT
-│       ├── DateUtils.java           # Tiện ích xử lý múi giờ VN, format ngày, kiểm tra quá hạn
+│       ├── DateUtils.java           # Kiểm tra múi giờ IANA, "hôm nay" theo múi giờ user, so sánh deadline
 │       └── FileUtils.java           # Tiện ích upload, sanitize tên file, validate extension
 │
 ├── config/                          # [CORE] Cấu hình hạ tầng & Security
 │   ├── SecurityConfig.java          # Cấu hình JWT Resource Server, CORS, Filter Chain, phân quyền
 │   ├── OpenApiConfig.java           # Cấu hình Swagger/OpenAPI v3 kèm Bearer Auth
-│   └── JpaAuditingConfig.java       # AuditorAware tự động điền userId vào createdBy/updatedBy
+│   └── JpaAuditingConfig.java       # Bật JPA Auditing cho createdAt/updatedAt
 │
 └── modules/                         # [BUSINESS MODULES] Phân chia theo nghiệp vụ
 ```
@@ -137,7 +138,7 @@ sequenceDiagram
     Note over TS: Khởi tạo Task Entity mới
     TS->>TR: taskRepository.save(task)
     activate TR
-    Note over TR: JPA Auditing tự động lấy userId<br/>từ SecurityContext gán vào createdBy
+    Note over TR: JPA Auditing tự động điền<br/>createdAt / updatedAt
     TR->>DB: INSERT INTO tasks (...)
     DB-->>TR: Dữ liệu đã lưu kèm ID & Timestamps
     TR-->>TS: Task entity đã lưu
@@ -338,7 +339,7 @@ Khi phát triển một nghiệp vụ mới (ví dụ: `comment` - bình luận 
 
 1. **Tạo thư mục module**:
    Tạo package `group16.webapp.modules.comment` với cấu trúc con:
-   - `entity/`: `Comment.java` kế thừa `BaseEntity`. Lưu `taskId`, `userId` bằng `Long`.
+   - `entity/`: `Comment.java` kế thừa `AuditableEntity` (bảng có `created_at` + `updated_at`) hoặc `BaseEntity`. Lưu `taskId`, `userId` bằng `Long`. Bảng mới = migration Flyway mới.
    - `repository/`: `CommentRepository.java` kế thừa `JpaRepository`.
    - `dto/`: `CommentRequest.java`, `CommentResponse.java`.
    - `mapper/`: `CommentMapper.java`.
@@ -357,4 +358,4 @@ Khi phát triển một nghiệp vụ mới (ví dụ: `comment` - bình luận 
    ```
 
 4. **Cập nhật quyền trong `SecurityConfig` (nếu cần)**:
-   Nếu endpoint yêu cầu phân quyền đặc biệt (Role ADMIN hoặc Public), cấu hình thêm trong `SecurityConfig.java`.
+   Chỉ cấu hình endpoint **public** trong `SecurityConfig.java`. Không có role toàn hệ thống; quyền LEADER/MEMBER theo nhóm kiểm tra ở Service theo `groupId`.
