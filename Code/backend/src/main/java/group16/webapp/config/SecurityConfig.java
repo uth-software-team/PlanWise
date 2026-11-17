@@ -52,12 +52,15 @@ public class SecurityConfig {
             "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**"
     };
 
+    /** HS256 requires a key of at least 256 bits. */
+    static final int MIN_JWT_SECRET_BYTES = 32;
+
     private final SecretKey secretKey;
     private final List<String> allowedOrigins;
 
     public SecurityConfig(@Value("${app.jwt.secret}") String jwtSecret,
                           @Value("${app.cors.allowed-origins}") String allowedOrigins) {
-        this.secretKey = new SecretKeySpec(jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+        this.secretKey = new SecretKeySpec(validateJwtSecret(jwtSecret), "HmacSHA256");
         this.allowedOrigins = Arrays.stream(allowedOrigins.split(",")).map(String::trim).toList();
     }
 
@@ -117,6 +120,20 @@ public class SecurityConfig {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(authorities);
         return converter;
+    }
+
+    /** Fail fast at startup instead of signing tokens with a missing or weak key. Never logs the value. */
+    static byte[] validateJwtSecret(String jwtSecret) {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT_SECRET is not set. Define it in Code/backend/.env or as an environment variable.");
+        }
+        byte[] bytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length < MIN_JWT_SECRET_BYTES) {
+            throw new IllegalStateException("JWT_SECRET must be at least " + MIN_JWT_SECRET_BYTES
+                    + " bytes (got " + bytes.length + ").");
+        }
+        return bytes;
     }
 
     /** 401/403 raised by the security filter chain (before reaching controllers). */

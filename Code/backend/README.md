@@ -228,6 +228,8 @@ export JWT_SECRET=chuoi-bi-mat-dai-hon-32-ky-tu-dung-de-ky-jwt-token
 export CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 
+> ⚠️ `JWT_SECRET` là **bắt buộc** (không có giá trị mặc định) và phải dài tối thiểu **32 byte**. Thiếu hoặc quá ngắn thì ứng dụng dừng ngay khi khởi động. `scripts/setup-dev.sh` tự sinh secret ngẫu nhiên khi tạo `.env`; tự tạo bằng `openssl rand -base64 32`. Test dùng secret riêng trong `application-test.properties`, không cần `.env`.
+
 ### 6.3. Các lệnh cơ bản
 Di chuyển vào thư mục backend:
 ```bash
