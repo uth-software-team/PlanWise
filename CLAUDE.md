@@ -8,7 +8,7 @@ Module-specific rules: `Code/backend/CLAUDE.md`, `Code/frontend/CLAUDE.md`.
 - `Code/backend/` — Spring Boot backend (current focus). Stack: Java 25, Spring Boot 4.1.x, Gradle 9.8 (wrapper), PostgreSQL / H2 (dev).
 - `Code/frontend/` — React frontend (NOT started).
 - `scripts/` — helper scripts. Read before running; never run destructive ones without approval.
-- `PlanWise Document/` — design docs (Word, images). Local only, not committed to the repo. Read-only: never edit original Word files.
+- `PlanWise Document/` — design docs (Word, UI screenshots, use case/class/ERD diagrams). Read-only: never edit original Word files.
 Do not move/rename top-level folders.
 
 ## Golden Rule
