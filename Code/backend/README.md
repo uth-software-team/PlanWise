@@ -230,6 +230,13 @@ export CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
 
 > ⚠️ `JWT_SECRET` là **bắt buộc** (không có giá trị mặc định) và phải dài tối thiểu **32 byte**. Thiếu hoặc quá ngắn thì ứng dụng dừng ngay khi khởi động. `scripts/setup-dev.sh` tự sinh secret ngẫu nhiên khi tạo `.env`; tự tạo bằng `openssl rand -base64 32`. Test dùng secret riêng trong `application-test.properties`, không cần `.env`.
 
+### 6.2.1. Database migration (Flyway)
+- Schema do **Flyway** quản lý: `src/main/resources/db/migration/V<n>__<mo_ta>.sql`. Flyway tự chạy migration mới khi ứng dụng khởi động.
+- Hibernate chỉ **kiểm tra** schema (`JPA_DDL_AUTO=validate`, mặc định). **Không** dùng `update`/`create` — nếu `.env` của bạn còn `JPA_DDL_AUTO=update`, hãy đổi thành `validate`.
+- Thay đổi schema = thêm file migration mới với số version kế tiếp. **Không bao giờ sửa** migration đã được apply (Flyway sẽ báo lỗi checksum).
+- Migration viết cho PostgreSQL 16. Test (`profile test`) tắt Flyway và dùng H2 `create-drop`.
+- Kiểm tra trên DB: `docker exec planwise-postgres psql -U planwise_user -d planwise_ai -c 'select version, description, success from flyway_schema_history;'`
+
 ### 6.3. Các lệnh cơ bản
 Di chuyển vào thư mục backend:
 ```bash
