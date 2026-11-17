@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   gitflow:
-    name: Git Flow rules
+    name: gitflow
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +74,7 @@ jobs:
           exit $bad
 
   backend-build:
-    name: Backend build & test
+    name: test
     runs-on: ubuntu-latest
     defaults:
       run:
