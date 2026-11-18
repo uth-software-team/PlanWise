@@ -92,3 +92,25 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew build --no-daemon
+
+  backend-pg:
+    name: pg
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Code/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      # Flyway migrations + JPA validate + PostgreSQL-only constraints on a Testcontainers postgres:16.
+      # ubuntu-latest runners ship with Docker.
+      - name: PostgreSQL tests
+        run: |
+          chmod +x gradlew
+          ./gradlew pgTest --no-daemon
