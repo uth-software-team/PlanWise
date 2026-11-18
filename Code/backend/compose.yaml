@@ -1,0 +1,39 @@
+# Local development PostgreSQL for PlanWise (dev only, not for production).
+#
+#   cd Code/backend && docker compose up -d      # start (waits for nothing; see healthcheck)
+#   docker compose ps                            # STATUS should become "healthy"
+#   docker compose stop                          # stop, keep data
+#   docker compose down                          # remove container, KEEP data volume
+#   (never add -v unless you really want to delete the local database)
+#
+# Credentials are read from Code/backend/.env (the same file the backend loads):
+#   DB_USERNAME, DB_PASSWORD (required), DB_NAME (optional, default planwise_ai), DB_PORT (optional, default 5432).
+# DB_URL in .env must point to the same port and database name.
+# POSTGRES_PASSWORD only applies when the volume is first created; changing DB_PASSWORD later
+# does not change the password of an existing database.
+
+name: planwise
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: planwise-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-planwise_ai}
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME must be set in Code/backend/.env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in Code/backend/.env}
+    ports:
+      # Bound to localhost only: the database is not reachable from other machines on the network.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: planwise_postgres_data

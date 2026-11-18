@@ -223,16 +223,24 @@ Mã riêng của module (`INVALID_TIME_RANGE`, `NO_AVAILABILITY_RULE`, `CONSTRAI
 - **Gradle**: Wrapper đi kèm dự án (`./gradlew`)
 
 ### 6.2. Cấu hình biến môi trường
-File cấu hình mặc định tại `src/main/resources/application.properties`. Khi chạy local dev, ứng dụng tự động dùng **H2 in-memory Database** (không cần cài PostgreSQL trước).
+Cấu hình nằm trong `src/main/resources/application.properties`, giá trị thật đặt trong `Code/backend/.env` (copy từ `.env.example`, **không commit**). Thứ tự ưu tiên: biến môi trường OS > `.env` > mặc định. Không có `.env` → ứng dụng dùng **H2 in-memory** (chỉ để thử nhanh; PostgreSQL là DB chuẩn khi dev).
 
-Nếu muốn chạy với PostgreSQL, copy file `.env.example` và thiết lập các biến môi trường:
+### 6.2.0. PostgreSQL bằng Docker Compose (khuyên dùng)
+Yêu cầu Docker Desktop (Windows/macOS), OrbStack (macOS) hoặc Docker Engine + Compose v2 (Linux).
 ```bash
-export DB_URL=jdbc:postgresql://localhost:5432/planwise
-export DB_USERNAME=postgres
-export DB_PASSWORD=your_password
-export JWT_SECRET=chuoi-bi-mat-dai-hon-32-ky-tu-dung-de-ky-jwt-token
-export CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+cd Code/backend
+docker compose up -d        # tạo/chạy container planwise-postgres (postgres:16, 127.0.0.1:5432, volume planwise_postgres_data)
+docker compose ps           # chờ STATUS = healthy
+docker compose stop         # dừng, giữ dữ liệu
+docker compose down         # xóa container, VẪN giữ dữ liệu (KHÔNG thêm -v nếu không muốn mất DB)
 ```
+Lệnh giống hệt trên PowerShell/CMD (Windows). `compose.yaml` đọc `DB_USERNAME`, `DB_PASSWORD` từ `.env`; tùy chọn `DB_NAME` (mặc định `planwise_ai`) và `DB_PORT` (mặc định `5432`) — `DB_URL` phải khớp port + tên DB.
+- **Port 5432 bị chiếm** (đã cài PostgreSQL trên máy): đặt `DB_PORT=5433` và `DB_URL=jdbc:postgresql://localhost:5433/planwise_ai` trong `.env`.
+- **Port 8080 bị chiếm**: đặt `SERVER_PORT=8081` trong `.env`.
+- `POSTGRES_PASSWORD` chỉ áp dụng khi volume được tạo lần đầu; đổi `DB_PASSWORD` sau đó không đổi mật khẩu DB đã có.
+- **Đã có container `planwise-postgres` cũ** (tạo bằng `docker run` hoặc compose khác): `setup-dev.sh` sẽ giữ nguyên nó. Muốn chuyển sang compose của repo: `docker stop planwise-postgres && docker rm planwise-postgres` (dữ liệu nằm ở volume cũ, không bị xóa) rồi `docker compose up -d` — DB mới trống, Flyway tự tạo lại bảng khi chạy backend.
+
+**Kiểm tra backend thật sự dùng PostgreSQL**: chạy `./gradlew bootRun` (Windows: `gradlew.bat bootRun`) và tìm trong log `HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection` (thấy `jdbc:h2` nghĩa là đang chạy H2).
 
 > ⚠️ `JWT_SECRET` là **bắt buộc** (không có giá trị mặc định) và phải dài tối thiểu **32 byte**. Thiếu hoặc quá ngắn thì ứng dụng dừng ngay khi khởi động. `scripts/setup-dev.sh` tự sinh secret ngẫu nhiên khi tạo `.env`; tự tạo bằng `openssl rand -base64 32`. Test dùng secret riêng trong `application-test.properties`, không cần `.env`.
 

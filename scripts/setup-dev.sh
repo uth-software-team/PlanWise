@@ -173,40 +173,50 @@ echo -e "  [✔] Đã cấp quyền thực thi cho các file trong thư mục ${
 echo -e "\n${BLUE}${BOLD}==> [4/5] Cấu hình Cơ sở Dữ liệu (Database)...${NC}"
 
 CONTAINER_NAME="planwise-postgres"
+COMPOSE_PROJECT="planwise"
+COMPOSE_FILE="${BACKEND_DIR}/compose.yaml"
 
 if [ "$START_DOCKER" = true ]; then
   if ! command -v docker >/dev/null 2>&1; then
     echo -e "  ${RED}[✘] Không tìm thấy Docker để khởi chạy container PostgreSQL.${NC}"
     echo -e "      Ứng dụng sẽ chuyển sang dùng H2 Database in-memory."
   elif ! docker info >/dev/null 2>&1; then
-    echo -e "  ${RED}[✘] Docker daemon chưa được bật (Docker Desktop đang tắt).${NC}"
-    echo -e "      Vui lòng mở Docker Desktop hoặc dùng H2 Database in-memory."
+    echo -e "  ${RED}[✘] Docker daemon chưa được bật (Docker Desktop / OrbStack đang tắt).${NC}"
+    echo -e "      Vui lòng mở Docker Desktop / OrbStack hoặc dùng H2 Database in-memory."
+  elif ! docker compose version >/dev/null 2>&1; then
+    echo -e "  ${RED}[✘] Không tìm thấy Docker Compose v2 (lệnh 'docker compose').${NC}"
   else
-    # Kiểm tra xem container đã tồn tại chưa
+    EXISTING_PROJECT=""
     if [ "$(docker ps -aq -f name=^${CONTAINER_NAME}$)" ]; then
-      if [ "$(docker ps -q -f name=^${CONTAINER_NAME}$)" ]; then
-        echo -e "  [✔] Docker container ${GREEN}${CONTAINER_NAME}${NC} đang chạy."
-      else
-        echo -e "  [i] Khởi động lại container ${CONTAINER_NAME}..."
-        docker start "${CONTAINER_NAME}"
+      EXISTING_PROJECT="$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "${CONTAINER_NAME}" 2>/dev/null || true)"
+    fi
+
+    if [ -n "$(docker ps -aq -f name=^${CONTAINER_NAME}$)" ] && [ "${EXISTING_PROJECT}" != "${COMPOSE_PROJECT}" ]; then
+      # Container cũ không do Code/backend/compose.yaml tạo: không động vào dữ liệu, chỉ đảm bảo nó đang chạy.
+      echo -e "  ${YELLOW}[!] Container ${CONTAINER_NAME} đã tồn tại nhưng không được tạo bởi Code/backend/compose.yaml.${NC}"
+      echo -e "      Giữ nguyên container cũ. Xem README (mục PostgreSQL) để chuyển sang compose."
+      if [ -z "$(docker ps -q -f name=^${CONTAINER_NAME}$)" ]; then
+        docker start "${CONTAINER_NAME}" >/dev/null
         echo -e "  [✔] Đã start container ${GREEN}${CONTAINER_NAME}${NC}."
+      else
+        echo -e "  [✔] Docker container ${GREEN}${CONTAINER_NAME}${NC} đang chạy."
       fi
     else
-      # Lấy thông tin DB từ Code/backend/.env để container khớp với cấu hình backend
-      env_val() { grep -E "^$1=" "${BACKEND_DIR}/.env" 2>/dev/null | tail -n 1 | cut -d= -f2-; }
-      PG_URL="$(env_val DB_URL)"
-      PG_DB="${PG_URL##*/}"; PG_DB="${PG_DB%%\?*}"
-      PG_DB="${PG_DB:-planwise_ai}"
-      PG_USER="$(env_val DB_USERNAME)"; PG_USER="${PG_USER:-planwise_user}"
-      PG_PASS="$(env_val DB_PASSWORD)"; PG_PASS="${PG_PASS:-change-me-local-db-password}"
-      echo -e "  [i] Đang kéo image và khởi tạo container PostgreSQL mới (${CONTAINER_NAME}, db=${PG_DB}, user=${PG_USER})..."
-      docker run --name "${CONTAINER_NAME}" \
-        -e POSTGRES_DB="${PG_DB}" \
-        -e POSTGRES_USER="${PG_USER}" \
-        -e POSTGRES_PASSWORD="${PG_PASS}" \
-        -p 5432:5432 \
-        -d postgres:16-alpine
-      echo -e "  [✔] Đã tạo và khởi chạy container ${GREEN}${CONTAINER_NAME}${NC} thành công tại port 5432."
+      echo -e "  [i] Khởi động PostgreSQL bằng ${CYAN}docker compose${NC} (Code/backend/compose.yaml)..."
+      # compose đọc DB_USERNAME / DB_PASSWORD / DB_NAME / DB_PORT từ Code/backend/.env
+      (cd "${BACKEND_DIR}" && docker compose -f "${COMPOSE_FILE}" up -d)
+      echo -e "  [i] Đang chờ PostgreSQL sẵn sàng (healthcheck)..."
+      HEALTH=""
+      for _ in $(seq 1 30); do
+        HEALTH="$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || true)"
+        [ "${HEALTH}" = "healthy" ] && break
+        sleep 2
+      done
+      if [ "${HEALTH}" = "healthy" ]; then
+        echo -e "  [✔] PostgreSQL ${GREEN}${CONTAINER_NAME}${NC} sẵn sàng tại 127.0.0.1 (port trong DB_PORT, mặc định 5432)."
+      else
+        echo -e "  ${YELLOW}[!] PostgreSQL chưa healthy sau 60 giây. Kiểm tra: cd Code/backend && docker compose logs postgres${NC}"
+      fi
     fi
   fi
 else
@@ -245,8 +255,8 @@ echo ""
 echo -e "  2. Swagger UI (Tài liệu API):"
 echo -e "     ${CYAN}http://localhost:8080/api/swagger-ui.html${NC}"
 echo ""
-echo -e "  3. H2 Console (khi dùng H2 in-memory DB):"
-echo -e "     ${CYAN}http://localhost:8080/api/h2-console${NC} (JDBC URL: jdbc:h2:mem:planwise)"
+echo -e "  3. PostgreSQL (Docker Compose):"
+echo -e "     ${CYAN}cd Code/backend && docker compose up -d${NC}   (dừng: docker compose stop)"
 echo ""
 echo -e "  4. Chạy toàn bộ Unit Tests:"
 echo -e "     ${CYAN}cd Code/backend && ./gradlew test${NC}"
