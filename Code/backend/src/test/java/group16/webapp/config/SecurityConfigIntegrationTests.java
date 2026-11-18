@@ -2,6 +2,7 @@ package group16.webapp.config;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -80,10 +81,18 @@ class SecurityConfigIntegrationTests {
 	}
 
 	@Test
-	void authEndpointsArePublic() throws Exception {
-		// Not mapped yet -> 404 proves the request was not blocked with 401.
-		mockMvc.perform(get("/v1/auth/login"))
-				.andExpect(status().isNotFound());
+	void registerLoginAndPasswordEndpointsArePublic() throws Exception {
+		// GET is not mapped -> 405 (or 404 for password/**) proves the request was not blocked with 401.
+		mockMvc.perform(get("/v1/auth/login")).andExpect(status().isMethodNotAllowed());
+		mockMvc.perform(get("/v1/auth/register")).andExpect(status().isMethodNotAllowed());
+		mockMvc.perform(get("/v1/auth/password/forgot")).andExpect(status().isNotFound());
+	}
+
+	@Test
+	void logoutRequiresToken() throws Exception {
+		mockMvc.perform(post("/v1/auth/logout"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 	}
 
 	@Test
