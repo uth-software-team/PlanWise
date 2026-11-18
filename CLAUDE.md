@@ -74,7 +74,7 @@ Names: lowercase, kebab-case, short.
 - Keep branches small and short-lived. Before opening a PR, sync with latest `develop` (rebase local unpushed work, or merge `develop` in if already pushed/shared).
 - Delete feature branches after merge. Tag `main` after each release/hotfix merge.
 - Check `git status` and current branch before starting. Never touch other members' uncommitted changes or branches.
-- No `git reset --hard`, `git clean -fd`, force push, or rewriting shared history without permission. Claude never merges, pushes, or opens PRs without explicit instruction.
+- No `git reset --hard`, `git clean -fd`, force push, or rewriting shared history without permission. Claude never merges, pushes, or opens PRs without explicit instruction. For tasks done in TV1's Claude sessions (D13), TV1 commits and pushes; Claude never commits or pushes, never opens/edits PRs or Issues, comments, approves, merges or changes GitHub settings, and reads GitHub only with the read-only credential (WORKFLOW.md §9). TV2–TV4 keep the current process.
 - If the repo's actual workflow differs, report it and let the user decide.
 
 **Enforcement (Claude must do this every session)**

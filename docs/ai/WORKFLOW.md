@@ -1,6 +1,6 @@
 # WORKFLOW — AI governance cho PlanWise AI
 
-Nguồn: setup plan `docs-ai v11`, SHA-256 `f64aadb84579871a0ff095418ce4c4c0e48930cb7b92aa7768b5abb6e0a07dea` (ngoài repo). Bổ sung cho `CLAUDE.md` (Golden Rule, Git Flow); khi khác nhau, áp dụng quy tắc chặt hơn. Quyết định đã duyệt: `docs/ai/APPROVED_DECISIONS.md`. Quy tắc cho agent: `AGENTS.md`.
+Nguồn: setup plan `docs-ai v14`, SHA-256 `340098160178e038ef04bb2bee1c937937353c1994db95ac02657080885fe0b3` (ngoài repo). Bổ sung cho `CLAUDE.md` (Golden Rule, Git Flow); khi khác nhau, áp dụng quy tắc chặt hơn. Quyết định đã duyệt: `docs/ai/APPROVED_DECISIONS.md`. Quy tắc cho agent: `AGENTS.md`.
 
 ## 0. Hiệu lực
 Quy trình này **chỉ có hiệu lực** từ 00:00 đầu tiên sau khi **A1–A8 đều đạt** (không có ngày cố định). Trước đó và với task đã bắt đầu trước kích hoạt (danh sách A7), áp dụng Git Flow và review hiện hành.
@@ -8,7 +8,7 @@ Quy trình này **chỉ có hiệu lực** từ 00:00 đầu tiên sau khi **A1�
 - **A1** Setup PR đã merge bằng `--match-head-commit` đúng head `H = C`; có `ACCEPT_SETUP` cho C; có peer Approve tại C **hoặc** `WAIVE_PEER_REVIEW docs-ai PR:#N COMMIT:C` hợp lệ (§7.1 bước 6b); hậu kiểm trên setup PR đạt.
 - **A2** (a) TV1 công bố ma trận §6 trên Software Group và từng người bị đổi phân công/tăng tải đồng ý rõ nhiệm vụ và giờ bù (lưu tham chiếu theo D10); (b) PR docs riêng sửa ma trận/fallback trong `docs/plan/05_GIT_PR_PLAN.md` đã merge vào `develop` theo `docs/plan/README.md`. Không có ngoại lệ chuyển tiếp.
 - **A3** Software Group đã được thông báo, mọi người biết cách lưu tham chiếu, agent không truy cập được kênh.
-- **A4** Fixture Claude (§9) đạt theo P-DENY. **A5** Fixture Codex (§9) đạt.
+- **A4** Fixture Claude (§9) đạt theo P-RO, chế độ `default` (§9). **A5** Fixture Codex (§9) đạt.
 - **A6** Đã tạo 12 label (§5). **A7** Đã có danh sách task chuyển tiếp (WBS, nhánh, SHA tại thời điểm cắt). **A8** Ba PR contract và F-05 đã xong theo quy trình cũ.
 
 ## 1. Vai trò
@@ -28,7 +28,6 @@ Quy trình này **chỉ có hiệu lực** từ 00:00 đầu tiên sau khi **A1�
 Lệnh phải chiếm toàn bộ một dòng, đúng ID, version, revision:
 ```text
 APPROVE_SETUP docs-ai <VERSION> SHA256:<64hex>
-AUTHORIZE_LOCAL_COMMIT <docs-ai|TASK_ID> REPO:github.com/uth-software-team/PlanWise BRANCH:<b> PARENT:<40hex> TREE:<40hex> MSG:<64hex>
 ACCEPT_SETUP docs-ai <VERSION> COMMIT:<40hex> CHANGESET:<64hex>
 OPEN_TASK <TASK_ID>
 APPROVE_PLAN | REQUEST_REVISION | REJECT_PLAN <TASK_ID> v<N> BLOB:<40hex>
@@ -39,6 +38,7 @@ CANCEL_TASK <TASK_ID>
 - `OPEN_TASK` cho phép điều tra chỉ đọc và ghi draft UNAPPROVED trên đúng nhánh task được phép; không code, build, commit, push.
 - `REJECT_PLAN` bắt buộc cách tiếp cận khác. Plan đã nộp là bất biến; đổi scope → `plan-v(N+1)` và duyệt lại.
 - ACCEPT không cấp quyền push/merge cho agent. Task ID: `PW-<BE|FE|INT|TEST>-<NNN>` (NNN = số Issue).
+- **Commit (D13):** với task làm trong phiên Claude của TV1, TV1 tự commit (kể cả local) và tự push (§4); TV2–TV4 giữ quy trình hiện hành. Agent không mở/sửa PR hay Issue, không comment, approve, merge hay đổi settings GitHub.
 - `WAIVE_PEER_REVIEW` gắn với đúng PR và head; head đổi thì hết hiệu lực. Nó không thay ACCEPT, Codex review, CI hay kiểm head/base. Agent không gõ, không đăng, không chuyển tiếp và không soạn sẵn dòng lệnh này.
 
 ## 3. Revision token
@@ -57,21 +57,17 @@ C=$(git rev-parse --verify "<cand>^{commit}")
 ```
 Mọi phép so SHA-256: pipeline phải thành công, chỉ so trường 64 hex đầu. Lệnh lỗi → STOP.
 
-## 4. `AUTHORIZE_LOCAL_COMMIT` (dùng một lần)
-- **Index**: với setup/task TV1, Claude chỉ `git add` path trong danh sách Files của plan đã duyệt (TV1 cũng có thể tự chuẩn bị). TREE trong lệnh là ràng buộc cuối cùng.
-- **MSG**: file message UTF-8, LF, không CR, kết thúc bằng đúng một LF, đã gồm trailer `Co-Authored-By`; MSG = digest `shasum -a 256 <msgfile>`. Commit: `git commit --cleanup=verbatim -F <msgfile>`.
-- **Trước commit** (`set -euo pipefail`; lỗi → STOP):
-  1. URL `git remote get-url origin` chuẩn hoá (bỏ scheme, thông tin đăng nhập, `.git`; host chữ thường; `git@host:` → `host/`) == `github.com/uth-software-team/PlanWise`; `git rev-parse --is-inside-work-tree` = true.
-  2. `git symbolic-ref --short HEAD` == BRANCH, không phải `main`/`develop`.
-  3. `git rev-parse --verify HEAD^{commit}` == PARENT. 4. `git write-tree` == TREE.
-  5. `git diff --cached --name-only --no-renames PARENT` ⊆ path được phép. 6. digest của msgfile == MSG.
-- **Sau commit**: `git rev-list --parents -n 1 HEAD` đúng 2 trường và parent == PARENT; `HEAD^{tree}` == TREE; `git cat-file commit HEAD | sed '1,/^$/d' | shasum -a 256` == MSG; nhánh không đổi.
-- Hết hiệu lực sau lần chạy đầu tiên dù thành công hay thất bại. Hook từ chối, lệch, không chắc chắn hoặc `/clear` → STOP, báo HEAD và `git status`, xin lệnh mới.
+## 4. Commit do TV1 tạo (D13)
+- **Phạm vi:** setup và mọi task làm trong phiên Claude của TV1. TV1 tự tạo mọi commit (kể cả commit local) và tự push; Claude không commit, không push. TV2–TV4 giữ quy trình commit/push hiện hành.
+- Claude sửa working tree trong phạm vi Files của plan đã duyệt, chạy kiểm tra/test, rồi báo danh sách path, `TREE` dự kiến (tính bằng index tạm qua `GIT_INDEX_FILE`, không đụng index thật), file message đề xuất và digest `MSG = shasum -a 256 <msgfile>` (UTF-8, LF, kết thúc bằng đúng một LF).
+- **TV1 trước commit**: đúng nhánh (không `main`/`develop`); `git rev-parse HEAD` == parent dự kiến; `git add` đúng các path; `git diff --cached --name-only --no-renames HEAD` ⊆ Files; `git write-tree` == TREE. Lệch → không commit.
+- **Commit**: `git commit --cleanup=verbatim -F <msgfile>`, hoặc message TV1 tự viết (khi đó không so MSG). Hook chạy bình thường; không `--no-verify`.
+- **Sau commit, Claude kiểm chỉ đọc**: `git rev-list --parents -n 1 HEAD` đúng 2 trường và parent đúng; `HEAD^{tree}` == TREE; path ⊆ Files; nếu dùng msgfile thì `git cat-file commit HEAD | sed '1,/^$/d' | shasum -a 256` == MSG. Lệch → báo TV1, không tự sửa.
 
 ## 5. Task, state và Track
 - **12 label**: `state:tech-review`, `state:waiting-clarification`, `state:ready-for-approval`, `state:implementation-approved`, `state:in-progress`, `state:code-review`, `state:changes-required`, `state:waiting-acceptance`, `state:accepted`; `blocked`, `track:a`, `track:b`.
 - Issue mở chưa có `state:*` = draft. DONE = Issue đóng completed **và** hậu kiểm đạt. CANCELLED = TV1 hủy, đóng not planned. `blocked` phủ lên state hiện tại; gỡ ra là state cũ trở lại.
-- **Chỉ TV1 chuyển state**; label được trễ tối đa 1 khung review; đối soát 16:00 (TV1 tự chạy lệnh đọc GitHub, vì P-DENY).
+- **Chỉ TV1 chuyển state**; label được trễ tối đa 1 khung review; đối soát 16:00 (Claude đọc GitHub theo §9; preflight thất bại thì TV1 sửa credential trước).
 - Luồng: owner tạo Issue (D5; TV1 kiểm ID/WBS/Track/reviewer/label) → owner nộp `plan-vN.md` (BLOB) → TV1 chạy Codex review, relay Directive (ID, base, BLOB/head, finding + bằng chứng, khuyến nghị) → TV1 duyệt qua đúng kênh → implement, mở PR → peer review **trước** Codex code review → TV1 ACCEPT → merge §7.
 - **Track A**: API, DB/migration, security, CI/dependency, scheduling, tích hợp liên module, cách ly dữ liệu test. **Track B**: thay đổi cô lập, rủi ro thấp (plan ≤ ~30 dòng). Chỉ TV1 hạ A → B.
 - Claim test phải có bằng chứng chạy. Audit sau ACCEPT ghi ở comment Issue (setup: comment setup PR), không thêm commit vào head đã accept.
@@ -92,7 +88,7 @@ Mọi phép so SHA-256: pipeline phải thành công, chỉ so trường 64 hex 
 | TV4 FE | TV2 | TV3 |
 | Fix batch | người không phải owner (xoay vòng) | người không phải owner còn lại |
 
-## 7. Merge checklist (TV1 thực hiện; Claude chỉ đọc kết quả TV1 cung cấp)
+## 7. Merge checklist (TV1 làm mọi thao tác ghi; Claude tự đọc GitHub theo §9 và báo cáo, không ghi)
 Chỉ TV1 merge, từng PR một (D9).
 
 ### 7.1 Khóa CI và merge (mọi luồng)
@@ -129,7 +125,7 @@ Chỉ TV1 merge, từng PR một (D9).
 **Bản ghi bằng chứng ACCEPT** (comment Issue; setup: comment setup PR): `ACCEPTED_HEAD = H`, `D_old = M^1`, `M`, run id, attempt, link Approve của peer (`commit.oid`). PR teammate: thêm link Approve của TV1 (body `ACCEPT_TASK`, `commit.oid == H`). PR do TV1 mở: thêm nguyên văn lệnh ACCEPT trong phiên, thời điểm kèm múi giờ, link comment audit, và ghi "no TV1 GitHub review (author)". Đường 6b: thay link Approve của peer bằng nguyên văn `WAIVE_PEER_REVIEW`, thời điểm kèm múi giờ, link comment của TV1, giá trị `reviewDecision`/`mergeStateStatus`/`mergeable`/`statusCheckRollup` danh sách rule và (nếu bắt buộc resolve thread) `totalCount` cùng kết quả "all resolved" ở bước 6b, ghi "peer review waived by TV1 (D12)". Không bao giờ yêu cầu TV1 tự review PR của mình.
 
 ### 7.2 Setup (`docs/ai-governance-setup` → `develop`, squash, không Issue PW)
-1. `APPROVE_SETUP docs-ai <v> SHA256:<plan>`. 2. Claude tạo đúng 6 path và chạy V-1..V-3 (V-3: theo setup plan SHA256 ở đầu file này). 3. `AUTHORIZE_LOCAL_COMMIT docs-ai …` → candidate `C`. 4. Codex review `git diff B C`, tự tính lại CHANGESET. 5. `ACCEPT_SETUP docs-ai <v> COMMIT:C CHANGESET:<x>`. 6. TV1 push đúng `C`, mở PR: `headRefOid == C`, base `develop`, body ghi `COMMIT:C`, `CHANGESET:`, plan SHA256, không `Closes`. 7. TV3 Approve tại C (vắng: TV4), **hoặc** TV1 miễn peer theo D12 (`WAIVE_PEER_REVIEW docs-ai PR:#N COMMIT:C`, §7.1 bước 6b). 8. §7.1 bước 0–8 với `H = C`, đường 6a hoặc 6b; bản ghi ACCEPT dạng "PR do TV1 mở". 9. TV1 comment hậu kiểm trên setup PR (`S`, `D`, `M`, `tree(S)`, `tree(M)`, kết quả). Thất bại/thiếu bước → A1 chưa đạt, §7.5. Head ≠ C → candidate mới, quay lại bước 3 (commit rỗng: bước 4); mọi Approve/ACCEPT/WAIVE cũ hết hiệu lực.
+1. `APPROVE_SETUP docs-ai <v> SHA256:<plan>`. 2. Claude tạo/sửa đúng 6 path, chạy V-1..V-3 (V-3: theo setup plan SHA256 ở đầu file này) và báo TREE/MSG theo §4. 3. TV1 tự commit theo §4 → candidate `C`; Claude kiểm sau commit. 4. Codex review `git diff B C`, tự tính lại CHANGESET. 5. `ACCEPT_SETUP docs-ai <v> COMMIT:C CHANGESET:<x>`. 6. TV1 push đúng `C`, mở PR: `headRefOid == C`, base `develop`, body ghi `COMMIT:C`, `CHANGESET:`, plan SHA256, không `Closes`. 7. TV3 Approve tại C (vắng: TV4), **hoặc** TV1 miễn peer theo D12 (`WAIVE_PEER_REVIEW docs-ai PR:#N COMMIT:C`, §7.1 bước 6b). 8. §7.1 bước 0–8 với `H = C`, đường 6a hoặc 6b; bản ghi ACCEPT dạng "PR do TV1 mở". 9. TV1 comment hậu kiểm trên setup PR (`S`, `D`, `M`, `tree(S)`, `tree(M)`, kết quả). Thất bại/thiếu bước → A1 chưa đạt, §7.5. Head ≠ C → candidate mới, quay lại bước 3 (commit rỗng: bước 4); mọi Approve/ACCEPT/WAIVE cũ hết hiệu lực.
 
 ### 7.3 Release và hotfix (merge commit, hai base)
 - Release: `release/x.y.z` từ `develop`, Issue `PW-INT-…`, tag `vx.y.z`. Hotfix: `hotfix/<desc>` từ tip `main`, Issue `PW-<BE|FE>-…`, Track A, tag `vX.Y.(Z+1)`. Không dùng `Closes`.
@@ -168,13 +164,16 @@ Ghi S, D, M; Issue/setup chưa xong. TV1 chọn: chạy `./gradlew build pgTest`
 3. Tìm task: nhánh `*/pw-<cat>-<nnn>-*` → Issue #nnn, hoặc ID TV1 đưa.
 4. Đọc `docs/ai/tasks/<ID>/plan-v*.md` và `record.md`, kể cả draft local; draft chỉ có trong chat → báo unavailable.
 5. Đối chiếu BLOB/COMMIT; báo state theo label và state theo bằng chứng.
-6. **STOP**, xin TV1 quyền mới trong phiên. Mọi quyền thực thi trước `/clear` (kể cả `AUTHORIZE_LOCAL_COMMIT` chưa dùng) đã hết hiệu lực.
+6. **STOP**, xin TV1 quyền mới trong phiên. Mọi quyền thực thi trước `/clear` đã hết hiệu lực.
 
 ## 9. Bảo mật
-- `.claude/settings.json` = **P-DENY**: chặn mọi `gh`, `git push`, `git credential`, `git config --global`, `security`; `permissions.disableBypassPermissionsMode = "disable"`. Mọi lệnh đọc GitHub do TV1 tự chạy rồi dán kết quả. Deny rule chỉ là lớp phòng thủ bổ sung (biến thể như `git -C … push` có thể không khớp). Chuyển sang policy khác cần plan và duyệt riêng.
+- `.claude/settings.json` = **P-RO** (dùng chung): không allow lệnh `gh` nào; chặn `gh` ghi (PR, Issue, comment, review, merge, run rerun/cancel/delete, label, release, workflow, secret, variable, repo, ruleset, cache, config, extension, alias, auth login/logout/refresh/switch/token/setup-git), `git push` (kể cả `git -C … push`), `git credential`, `git config --global`, `security`, và đọc `.claude/settings.local.json`; `permissions.disableBypassPermissionsMode = "disable"`. Đổi policy cần plan và duyệt riêng.
+- **Máy TV1 (D13, ngoài repo):** `.claude/settings.local.json` (đã nằm trong `.git/info/exclude`) đặt `env.GH_TOKEN` = fine-grained PAT **chỉ đọc**, chỉ repo `uth-software-team/PlanWise`, và `env.GH_CONFIG_DIR` = một thư mục rỗng riêng không chứa đăng nhập nào, nên `gh` trong phiên Claude không dùng được đăng nhập admin của TV1. File này allow `gh` đọc (`pr view/list/checks/diff`, `issue view/list`, `run view/list`) và chỉ năm truy vấn `gh api` đọc cố định (preflight `user`, ruleset `develop`/`main`, commit object, GraphQL review thread); `gh api` khác phải hỏi TV1, `gh api` có `-X`/`--method`/`--input` bị chặn; file này cũng chặn `git commit` (kể cả `git -C … commit`). Ghi phía server bị chặn bởi quyền token.
+- **Preflight** (chi tiết trong setup plan): trước lệnh `gh` đầu tiên mỗi phiên, Claude kiểm `GH_TOKEN` có, `GH_CONFIG_DIR` trùng `PLANWISE_GH_RO_DIR`, khác thư mục mặc định và không có đăng nhập lưu sẵn, rồi `gh api -i user --jq .login` trả 200, đúng login, token còn hạn. Thất bại → Claude dừng mọi lệnh `gh` và báo TV1; không đổi biến môi trường, không dùng đăng nhập khác. Không in, ghi log hay commit token.
+- **Chế độ quyền:** phiên PlanWise chạy ở chế độ `default` (deny chặn, allow chạy ngay, còn lại hỏi TV1); fixture A4 chạy ở đúng chế độ này. Dùng chế độ khác cần plan mới và chạy lại A4. Khi được hỏi, TV1 từ chối mọi lệnh ghi GitHub/git ở dạng lạ (ví dụ đổi biến môi trường trước `gh`, đường dẫn tuyệt đối tới `gh`/`git`).
 - Codex: `~/.codex/config.toml` với `sandbox_mode = "read-only"`, `approval_policy = "never"` (TV1 cấu hình).
 - D8: không bật browser, computer-use, cloud task hoặc connector có quyền ghi.
 - **Fixture trước kích hoạt** (TV1 chạy trong thư mục scratch, không mạng ra ngoài, không credential, không repo thật; control và restricted dùng cùng lệnh; chi tiết trong setup plan):
-  - A4: SHA-256 policy trong phiên scratch == `.claude/settings.json` của candidate; push vào remote cục bộ bị deny và ref không tồn tại; `gh` giả có marker — `gh pr comment`, `gh pr view`, `gh api user`, `gh` đều bị deny, không có marker; biến thể `git -C` được ghi nhận.
+  - A4 (P-RO, chế độ `default`): hash `.claude/settings.json` và hash phần không có `env` của file local khớp bản ghi; trong scratch với `gh` giả: preflight với dữ liệu giả đạt, còn thiếu token/token sai/sai config dir thì dừng; lệnh đọc (pr view, pr checks, run list, run view --log, năm truy vấn `gh api` được allow) chạy không hỏi; `gh api` ngoài danh sách phải hỏi, `gh api` có phương thức ghi bị deny; lệnh ghi (pr comment, pr merge, auth token, issue create, run rerun) bị deny; lệnh vòng (đổi biến môi trường, đường dẫn tuyệt đối) không tự chạy; `git push` và `git commit` (kể cả `-C`) bị deny. Trên repo thật chỉ kiểm đọc: cấu hình token chỉ đọc đã ghi; Claude đọc được PR, checks, log CI, ruleset, review thread; token thiếu hoặc sai → `gh` thất bại, không rơi về admin. Không thử ghi trên repo thật.
   - A5: Codex chạy được lệnh đọc (control), ghi file bị sandbox chặn và file không tồn tại, truy cập HTTP loopback bị chặn với control trước/sau đạt (nhập nhằng = INCONCLUSIVE), cloud/connector đã kiểm và ghi lại.
   - INCONCLUSIVE ở bất kỳ ca nào → điều kiện tương ứng chưa đạt.
