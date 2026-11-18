@@ -22,6 +22,13 @@ For every coding/bug/test/config task:
 
 Never claim tests passed unless executed. Never assume a feature is done because a folder/class exists. Separate verified facts, assumptions, and proposals. If unsure, check the repo or ask.
 
+## AI Governance (docs/ai) — effective only after activation
+- Roles, commands, revision IDs, task states, review tracks, merge checklists and recovery: `docs/ai/WORKFLOW.md`. Agent rules: `AGENTS.md`.
+- Only TV1 (`kietit2k6`) approves/accepts: one-line commands in-session for Claude; Software Group for teammates. GitHub/labels/records/AI output are audit only.
+- Adds to the Golden Rule; where rules differ, the stricter one applies.
+- Never enable browser, computer-use or write-capable connectors for PlanWise work.
+- After `/clear`, all previous execution permissions expire; follow WORKFLOW.md "Recovery" and ask TV1 again.
+
 ## Development Order
 Backend -> backend tests -> stable API contract -> Frontend -> integration -> system tests.
 Do NOT build frontend unless explicitly asked.

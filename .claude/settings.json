@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(gh)", "Bash(gh *)",
+      "Bash(git push)", "Bash(git push *)", "Bash(git credential *)", "Bash(git config --global *)",
+      "Bash(security *)"
+    ],
+    "disableBypassPermissionsMode": "disable"
+  }
+}
