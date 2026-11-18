@@ -73,8 +73,9 @@ PlanWise/
 
 ### Yêu cầu
 - **Java 25** (`brew install openjdk@25` trên macOS)
-- Docker *(tùy chọn — chỉ khi muốn chạy PostgreSQL)*
+- Docker + Docker Compose v2 *(Docker Desktop / OrbStack / Docker Engine — để chạy PostgreSQL)*
 - Node.js 18+ *(khi bắt đầu frontend)*
+- **Windows**: chạy các script `.sh` bằng **Git Bash** hoặc **WSL**; Gradle dùng `gradlew.bat` (hoặc `./gradlew` trong Git Bash). `docker compose` chạy được trực tiếp trên PowerShell.
 
 ### Cách 1 — dùng script (khuyên dùng)
 ```bash
@@ -84,7 +85,7 @@ git checkout develop
 bash scripts/install-hooks.sh     # BẮT BUỘC, chạy 1 lần sau khi clone: bật git hooks kiểm tra Git Flow
 
 ./scripts/setup-dev.sh            # Kiểm tra công cụ, tạo .env từ .env.example, build thử backend (dùng H2)
-./scripts/setup-dev.sh --docker   # Như trên + bật PostgreSQL bằng Docker (port 5432)
+./scripts/setup-dev.sh --docker   # Như trên + bật PostgreSQL bằng docker compose (Code/backend/compose.yaml)
 ./scripts/setup-dev.sh -d -r      # Bật PostgreSQL và chạy backend luôn
 ./scripts/setup-dev.sh --help     # Xem tất cả tùy chọn
 ```
@@ -92,7 +93,8 @@ bash scripts/install-hooks.sh     # BẮT BUỘC, chạy 1 lần sau khi clone: 
 ### Cách 2 — chạy tay
 ```bash
 cd Code/backend
-./gradlew bootRun     # Chạy server dev (mặc định dùng H2 in-memory)
+docker compose up -d  # PostgreSQL 16 (cần Code/backend/.env có DB_USERNAME, DB_PASSWORD)
+./gradlew bootRun     # Chạy server dev (PostgreSQL nếu .env có DB_URL, nếu không thì H2 in-memory)
 ./gradlew test        # Chạy test
 ./gradlew build       # Build + test
 ```

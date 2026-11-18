@@ -11,14 +11,14 @@ Check `build.gradle` before adding dependencies. Never bump versions or swap wor
 - Build: `./gradlew build`
 - Test: `./gradlew test` (single: `./gradlew test --tests "ClassName"`)
 - Run: `./gradlew bootRun`
-- DB: `docker compose up -d` (only if a compose file exists), or `./scripts/setup-dev.sh --docker` from repo root
+- DB: `docker compose up -d` in `Code/backend/` (`compose.yaml`), or `./scripts/setup-dev.sh --docker` from repo root. Never `docker compose down -v` (deletes the DB volume) without approval.
 Never run migrations or data-changing commands without approval.
 
 ## Configuration & Environment
 - `Code/backend/.env` (KEY=VALUE) is loaded automatically via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. Precedence: real OS env vars > `.env` > defaults in `application.properties`.
 - No `.env` -> fallback to H2 in-memory (`jdbc:h2:mem:planwise`). Never rely on this silently: when PostgreSQL is expected, confirm it.
 - Keys: `SERVER_PORT` (default 8080), `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JPA_DDL_AUTO`, `JWT_SECRET`, `JWT_EXPIRATION_MINUTES`, `CORS_ALLOWED_ORIGINS`.
-- Local PostgreSQL: container `planwise-postgres` (PostgreSQL 16), DB `planwise_ai`, user `planwise_user`, port 5432. `setup-dev.sh --docker` creates the container from the DB name/user/password in `.env`, so keep them in sync.
+- Local PostgreSQL: container `planwise-postgres` (PostgreSQL 16), DB `planwise_ai`, user `planwise_user`, port 5432. `compose.yaml` (project `planwise`, volume `planwise_postgres_data`, bound to 127.0.0.1) reads `DB_USERNAME`/`DB_PASSWORD` and optional `DB_NAME`/`DB_PORT` from `.env`; keep `DB_URL` in sync.
 - `.env` is personal and secret: never read, print, edit, or commit it. To check it, compare against the container config without printing values. New keys go to `.env.example` with placeholders only.
 - Verify a PostgreSQL connection by running `./gradlew bootRun` and checking the log for `HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection` (`jdbc:h2` = fell back to H2), plus `pg_stat_activity` on the DB side. Stop the app afterwards.
 - Port 8080 may be taken by another local service (e.g. nginx); use `SERVER_PORT` instead of changing code.
