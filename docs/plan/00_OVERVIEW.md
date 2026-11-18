@@ -23,7 +23,7 @@ Nguồn thiết kế: `PlanWise Document/PlanWise AI Document .docx` (BR-01..15,
 ## 2. Foundation blockers (TV1, theo thứ tự)
 
 1. F-01 + F-04: skeleton `modules/*`, `ErrorCode` đầy đủ, `ConflictErrorDto` + `ConflictErrorResponse`, `NotificationApi` no-op (11-18).
-2. F-02: V2, V9 + cấp số + merge V2..V10 đúng thứ tự, chạy thử trên PostgreSQL (11-19).
+2. F-02: V2, V3 (merge 11-18) + cấp số + merge V4..V10 đúng thứ tự, chạy thử trên PostgreSQL (11-19).
 3. F-05: snapshot OpenAPI — contract frozen (11-20 10:00).
 4. AU-01..03: User + register/login/JWT 24h + `/users/me` (11-21).
 5. FE-00..03: scaffold frontend (11-23).
@@ -35,10 +35,10 @@ Module test dùng `jwt()` của spring-security-test nên **TV2–TV4 không ph�
 
 | Thành viên | Vai trò | Sở hữu | Migration nháp |
 |---|---|---|---|
-| TV1 Huỳnh Thanh Kiệt | Foundation & Tech Lead | Foundation, migration numbering, OpenAPI contract, Security/JWT, Auth & Profile (BE+FE), FE scaffold, GR-04, CI, Testcontainers, QA, release, ghép báo cáo | V2 `password_reset_tokens`, V9 `notifications` |
-| TV2 Võ Thị Kim Kiều | Feature Dev | Smart Scheduling & Schedule Management (BE+FE, Calendar view) | V8 `schedule_proposals`, `schedule_sessions` |
-| TV3 Phan Ký Khôi | Feature Dev | Personal Tasks, Availability & Fixed Events, Calendar query (BE+FE), Dashboard (P1) | V3 `tasks`, V4 `availability_rules`, V5 `fixed_events` |
-| TV4 Hồ Ngọc Anh Thư | Feature Dev | Team, Task Assignment, AI Task Parsing (BE+FE) | V6 `team_groups` + `group_members`, V7 `task_assignments`, V10 `ai_request_logs` |
+| TV1 Huỳnh Thanh Kiệt | Foundation & Tech Lead | Foundation, migration numbering, OpenAPI contract, Security/JWT, Auth & Profile (BE+FE), FE scaffold, GR-04, CI, Testcontainers, QA, release, ghép báo cáo | V2 `password_reset_tokens`, V3 `notifications` |
+| TV2 Võ Thị Kim Kiều | Feature Dev | Smart Scheduling & Schedule Management (BE+FE, Calendar view) | V10 `schedule_proposals`, `schedule_sessions` |
+| TV3 Phan Ký Khôi | Feature Dev | Personal Tasks, Availability & Fixed Events, Calendar query (BE+FE), Dashboard (P1) | V4 `tasks`, V5 `availability_rules`, V6 `fixed_events` |
+| TV4 Hồ Ngọc Anh Thư | Feature Dev | Team, Task Assignment, AI Task Parsing (BE+FE) | V7 `team_groups` + `group_members`, V8 `task_assignments`, V9 `ai_request_logs` |
 
 Owner đơn nhất: **Flyway numbering, OpenAPI contract, Security interfaces = TV1.**
 

@@ -4,10 +4,10 @@
 
 ```mermaid
 graph LR
-  F01[F-01/F-04 skeleton + ErrorCode] --> C1[TK-01 + nháp V3-5]
-  F01 --> C2[SC-01 + nháp V8]
-  F01 --> C3[GR-01 + nháp V6,7,10]
-  C1 --> F02[F-02 V2,V9 + merge V2..V10]
+  F01[F-01/F-04 skeleton + ErrorCode] --> C1[TK-01 + nháp V4-6]
+  F01 --> C2[SC-01 + nháp V10]
+  F01 --> C3[GR-01 + nháp V7-9]
+  C1 --> F02[F-02 V2,V3 + merge V4..V10]
   C2 --> F02
   C3 --> F02
   C1 --> F05[F-05 contract freeze]

@@ -7,7 +7,7 @@
 - Owner **Personal Tasks**, **Availability Rules & Fixed Events**, **Calendar query** (BE + FE). Đây là input chính của Scheduling.
 - Reviewer chính cho BE của TV4 và các PR của TV1.
 
-**Package/file sở hữu:** `modules/task`, `modules/availability` (gồm calendar), `modules/dashboard` (P1), nháp migration V3 `tasks`, V4 `availability_rules`, V5 `fixed_events`; FE `features/tasks`, `features/availability`, `features/dashboard` (P1).
+**Package/file sở hữu:** `modules/task`, `modules/availability` (gồm calendar), `modules/dashboard` (P1), nháp migration V4 `tasks`, V5 `availability_rules`, V6 `fixed_events`; FE `features/tasks`, `features/availability`, `features/dashboard` (P1).
 
 **Tổng giờ:** 90h = BE 40 · FE 24 · Review 4 · Báo cáo 5 · Integration 17 (P1 không tính: DB-01 3h, FE-DB 4h — mặc định CUT).
 
@@ -17,7 +17,7 @@
 
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
-| TK-00 | Nháp V3, V4, V5 | P0 | 2 | ERD | trong `feature/contract-task-availability` | Khớp ERD; CHECK ONCE/WEEKLY | review TV1 | 11-18 |
+| TK-00 | Nháp V4, V5, V6 | P0 | 2 | ERD | trong `feature/contract-task-availability` | Khớp ERD; CHECK ONCE/WEEKLY | review TV1 | 11-18 |
 | TK-01 | Contract Task/Availability/FixedEvent/Calendar + interface | P0 | 5 | F-01, F-04 | `feature/contract-task-availability` | Stub 501; chữ ký `TaskApi`, `AvailabilityApi`, `CalendarApi` | build | 11-19 |
 | TK-02 | Task entity + CRUD | P0 | 7 | F-02, TK-01 | `feature/task-crud` | BR-01/02/03; owner-only; soft delete; `version` | WebMvc + service | 11-21 |
 | TK-03 | Status + filter + paging | P0 | 3 | TK-02 | `feature/task-status-filter` | `PageResponse` | tests | 11-21 |
@@ -37,7 +37,7 @@
 
 ## Lịch từng ngày
 
-- [ ] **11-18 (T4):** setup env (`bash scripts/install-hooks.sh`, `./scripts/setup-dev.sh --docker`, `./gradlew build`); đọc doc phần Task/Availability + ERD; TK-00 nháp V3–V5.
+- [ ] **11-18 (T4):** setup env (`bash scripts/install-hooks.sh`, `./scripts/setup-dev.sh --docker`, `./gradlew build`); đọc doc phần Task/Availability + ERD; TK-00 nháp V4–V6.
 - [ ] **11-19 (T5):** TK-01 (mở PR kèm nháp migration trước 11:00); sửa theo review TV1.
 - [ ] **11-20 (T6):** TK-02.
 - [ ] **11-21 (T7):** TK-02 xong; TK-03; TK-04 (**Tasks API merged** — TV2, TV4 đang chờ TK-04).

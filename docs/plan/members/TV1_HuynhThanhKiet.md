@@ -19,7 +19,7 @@
 |---|---|---|---|---|---|---|---|---|
 | F-01 | Module skeleton + quy ước gọi chéo | P0 | 2 | — | `feature/foundation-module-skeleton` | 9 package; CG-02 trong README | build | 11-18 |
 | F-04 | `ErrorCode` + `ConflictErrorDto` + `ConflictErrorResponse` + `NotificationApi` no-op | P0 | 2 | — | (cùng F-01) | Đủ mã CG-05 | handler test 409 | 11-18 |
-| F-02 | V2, V9 + cấp số + review/merge V3..V10 + chạy thử PG | P0 | 3 | F-01, contract PRs | `feature/db-auth-notification-schema` | Flyway lên v10 trên PG, `validate` ok | bootRun PG | 11-19 16:00 |
+| F-02 | V2, V3 (merge 11-18) + cấp số + review/merge V4..V10 + chạy thử PG | P0 | 3 | F-01, contract PRs | `feature/db-auth-notification-schema` | Flyway lên v10 trên PG, `validate` ok | bootRun PG | 11-19 16:00 |
 | F-05 | Snapshot OpenAPI | P0 | 1 | TK-01, SC-01, GR-01 | `docs/api-contract-v1` | Đủ endpoint MVP | đối chiếu doc | 11-20 10:00 |
 | AU-01 | `User` entity/repo + `UserApi` | P0 | 2 | F-02 | `feature/auth-register-login` | Map đúng V1 | repo | 11-20 |
 | AU-02 | Register/login/logout + `JwtService` + 24h | P0 | 5 | AU-01 | (cùng AU-01) | 201/409/401; `exp` 24h; `.env.example` 1440 | WebMvc + service | 11-21 |
@@ -48,7 +48,7 @@
 ## Lịch từng ngày
 
 - [ ] **11-18 (T4):** F-01, F-04 (mở PR); mời TV2–4 vào repo, đặt ruleset approvals = 1 (I-1).
-- [ ] **11-19 (T5):** F-02 (V2, V9, cấp số); review + merge contract PRs và migration; chạy thử chuỗi V2..V10 trên PG → công bố **DB ready 16:00**.
+- [ ] **11-19 (T5):** F-02 (V2, V3 đã merge 11-18); review + merge contract PRs và migration theo thứ tự TK-01 → GR-01 → SC-01; chạy thử chuỗi V2..V10 trên PG → công bố **DB ready 16:00**.
 - [ ] **11-20 (T6):** F-05 lúc 10:00 (**contract frozen**); AU-01; AU-02.
 - [ ] **11-21 (T7):** AU-02 xong; AU-03 (**Security ready**); FE-00 bắt đầu.
 - [ ] **11-22 (CN):** FE-00 xong; FE-01 (merge 16:00); FE-02 bắt đầu.
