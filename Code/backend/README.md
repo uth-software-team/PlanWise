@@ -202,12 +202,17 @@ if (!project.getOwnerId().equals(currentUserId)) {
 ```
 
 #### Một số mã lỗi thường gặp trong `ErrorCode`:
-- `VALIDATION_ERROR` (400): Dữ liệu gửi lên sai định dạng (thiếu trường, email sai format...). `data` sẽ chứa chi tiết lỗi từng field.
-- `UNAUTHORIZED` (401): Chưa đăng nhập hoặc token không hợp lệ / hết hạn.
-- `FORBIDDEN` (403): Đã đăng nhập nhưng không đủ quyền thực hiện hành động.
-- `USER_NOT_FOUND` / `PROJECT_NOT_FOUND` / `TASK_NOT_FOUND` (404): Không tìm thấy tài nguyên.
-- `EMAIL_ALREADY_EXISTS` (409): Trùng email khi đăng ký.
-- `INTERNAL_ERROR` (500): Lỗi hệ thống ngoài dự kiến.
+Tên mã lỗi theo hợp đồng API trong tài liệu thiết kế:
+- `INVALID_INPUT` (400): Dữ liệu sai (thiếu trường, sai kiểu, JSON hỏng, tham số không hợp lệ). Lỗi validate có `data` = `{ field: message }`.
+- `UNAUTHENTICATED` (401): Chưa đăng nhập hoặc token không hợp lệ / hết hạn. `INVALID_CREDENTIALS` (401): sai email/mật khẩu.
+- `FORBIDDEN` (403): Đã đăng nhập nhưng không đủ quyền.
+- `RESOURCE_NOT_FOUND` (404): Không tìm thấy tài nguyên (dùng chung cho mọi module, ghi rõ trong `message`).
+- `METHOD_NOT_ALLOWED` (405, kèm header `Allow`) / `UNSUPPORTED_MEDIA_TYPE` (415).
+- `STALE_VERSION` (409): Sai version (optimistic locking) — client tải lại dữ liệu.
+- `DATA_CONFLICT` (409): Vi phạm ràng buộc DB (lưới an toàn; Service nên kiểm tra trước và ném mã cụ thể như `EMAIL_ALREADY_EXISTS`).
+- `INTERNAL_ERROR` (500): Lỗi ngoài dự kiến; không bao giờ trả stack trace hay chi tiết nội bộ.
+
+Mã riêng của module (`INVALID_TIME_RANGE`, `NO_AVAILABILITY_RULE`, `CONSTRAINT_VIOLATION`, `AI_UNAVAILABLE`, mã HC-xx…) được thêm cùng module sử dụng chúng.
 
 ---
 
