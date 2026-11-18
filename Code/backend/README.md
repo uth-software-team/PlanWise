@@ -70,16 +70,16 @@ src/main/java/group16/webapp/
 
 ```
 ❌ SAI:
-TaskServiceImpl ──> ProjectRepository (Xuyên thủng ranh giới tầng dữ liệu của module khác)
+AssignmentServiceImpl ──> TaskRepository (Xuyên thủng ranh giới tầng dữ liệu của module khác)
 
 ✅ ĐÚNG:
-TaskServiceImpl ──> ProjectApi (Chỉ phụ thuộc vào Contract trừu tượng)
-                         ▲
-                         └── ProjectServiceImpl implements ProjectApi
+AssignmentServiceImpl ──> TaskApi (Chỉ phụ thuộc vào Contract trừu tượng)
+                               ▲
+                               └── TaskServiceImpl implements TaskApi
 ```
 
 ### Nguyên tắc 2: Không tạo liên kết JPA Foreign Key xuyên module
-- Trong Entity `Project` hay `Task`, các tham chiếu đến `User` hoặc `Project` **chỉ lưu bằng ID thô** (`Long ownerId`, `Long projectId`, `Long assigneeId`).
+- Trong Entity `Task` hay `TaskAssignment`, các tham chiếu sang module khác **chỉ lưu bằng ID thô** (`Long ownerUserId`, `Long groupId`, `Long taskId`, `Long assigneeUserId`). Ràng buộc FK vẫn được khai báo ở tầng DB trong migration Flyway.
 - **Không dùng** `@ManyToOne`, `@OneToMany` xuyên qua ranh giới các module.
 - **Lợi ích**: Dữ liệu hoàn toàn độc lập, không tạo vòng lặp phụ thuộc (circular dependency), dễ dàng phân rã thành database riêng biệt nếu sau này tách Microservices.
 
@@ -105,37 +105,31 @@ sequenceDiagram
     participant Sec as Security Filter (SecurityConfig)
     participant TC as TaskController
     participant TS as TaskServiceImpl
-    participant PA as ProjectApi (Module Project)
-    participant UA as UserApi (Module User)
+    participant GA as GroupApi (Module Team)
     participant TR as TaskRepository
-    participant DB as Database
+    participant DB as PostgreSQL
 
     Client->>Sec: POST /api/v1/tasks (Bearer JWT + JSON body)
     activate Sec
-    Note over Sec: Xác thực JWT token, lấy userId & role<br/>Nạp vào SecurityContext
+    Note over Sec: Xác thực JWT, lấy userId từ token<br/>(không tin userId client gửi lên)
     Sec->>TC: Chuyển request hợp lệ vào Controller
     deactivate Sec
-    
+
     activate TC
-    Note over TC: @Valid kiểm tra cú pháp DTO:<br/>title != blank, projectId != null
-    TC->>TS: taskService.create(request)
+    Note over TC: @Valid TaskCreateRequest:<br/>title không rỗng (BR-01), estimatedDurationMinutes > 0 (BR-02)
+    TC->>TS: taskService.create(currentUserId, request)
     deactivate TC
-    
+
     activate TS
     Note over TS: Mở @Transactional
-    TS->>PA: projectApi.existsById(projectId)
-    PA->>DB: SELECT count(*) FROM projects WHERE id = ?
-    DB-->>PA: Kết quả
-    PA-->>TS: true (Hợp lệ)
-    
-    opt Nếu có assigneeId
-        TS->>UA: userApi.existsById(assigneeId)
-        UA->>DB: SELECT count(*) FROM users WHERE id = ?
-        DB-->>UA: Kết quả
-        UA-->>TS: true (Hợp lệ)
+    opt Task nhóm (groupId != null)
+        TS->>GA: groupApi.isLeader(groupId, currentUserId)
+        GA->>DB: SELECT ... FROM group_members WHERE group_id = ? AND user_id = ?
+        DB-->>GA: Kết quả
+        GA-->>TS: true / false (false → AppException FORBIDDEN)
     end
-    
-    Note over TS: Khởi tạo Task Entity mới
+
+    Note over TS: Tạo Task: ownerUserId = currentUserId, status = TODO (BR-02)
     TS->>TR: taskRepository.save(task)
     activate TR
     Note over TR: JPA Auditing tự động điền<br/>createdAt / updatedAt
@@ -143,8 +137,8 @@ sequenceDiagram
     DB-->>TR: Dữ liệu đã lưu kèm ID & Timestamps
     TR-->>TS: Task entity đã lưu
     deactivate TR
-    
-    Note over TS: TaskMapper.toResponse(task)<br/>Kiểm tra quá hạn (overdue) qua DateUtils
+
+    Note over TS: TaskMapper.toResponse(task)<br/>overdue = quá deadline và chưa COMPLETED/CANCELLED (BR-03)
     TS-->>TC: TaskResponse DTO
     activate TC
     Note over TC: Bọc vào ApiResponse.ok("Task created", ...)
@@ -169,11 +163,14 @@ Mọi response trả về từ hệ thống đều có format đồng nhất:
     "id": 1,
     "title": "Thiết kế cơ sở dữ liệu",
     "description": "ERD và thiết kế bảng",
+    "deadline": "2026-11-30T11:00:00Z",
+    "priority": "HIGH",
+    "category": "STUDY",
+    "estimatedDurationMinutes": 90,
     "status": "TODO",
-    "dueDate": "2026-12-31",
     "overdue": false,
-    "projectId": 1,
-    "assigneeId": 2
+    "groupId": null,
+    "version": 0
   },
   "timestamp": "2026-10-27T11:00:00Z"
 }
@@ -184,7 +181,7 @@ Lập trình viên **không tự try/catch** để trả response lỗi. Khi có
 
 ```java
 // Ví dụ kiểm tra quyền sở hữu
-if (!project.getOwnerId().equals(currentUserId)) {
+if (!task.getOwnerUserId().equals(currentUserId)) {
     throw new AppException(ErrorCode.FORBIDDEN);
 }
 ```
@@ -290,6 +287,8 @@ Sau khi khởi động server, truy cập:
 
 ### 7.2. Kịch bản test nhanh bằng cURL
 
+> ⚠️ Các endpoint dưới đây là **hợp đồng dự kiến** theo bảng "Tổng quan REST API" trong tài liệu thiết kế (thêm tiền tố `/v1`). Chúng chỉ hoạt động khi module tương ứng đã được hiện thực; tên trường trong body có thể thay đổi theo DTO thực tế.
+
 #### 1. Đăng ký tài khoản mới:
 ```bash
 curl -X POST http://localhost:8080/api/v1/auth/register \
@@ -318,18 +317,7 @@ curl -X GET http://localhost:8080/api/v1/users/me \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
-#### 4. Tạo dự án mới (Tự động gán người tạo làm Owner):
-```bash
-curl -X POST http://localhost:8080/api/v1/projects \
-  -H "Authorization: Bearer <TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Kế hoạch Quý 4",
-    "description": "Triển khai hệ thống PlanWise"
-  }'
-```
-
-#### 5. Tạo công việc thuộc dự án:
+#### 4. Tạo công việc cá nhân:
 ```bash
 curl -X POST http://localhost:8080/api/v1/tasks \
   -H "Authorization: Bearer <TOKEN>" \
@@ -337,37 +325,38 @@ curl -X POST http://localhost:8080/api/v1/tasks \
   -d '{
     "title": "Thiết kế cơ sở dữ liệu",
     "description": "Hoàn thiện sơ đồ quan hệ thực thể",
-    "status": "TODO",
-    "dueDate": "2026-11-30",
-    "projectId": 1,
-    "assigneeId": 1
+    "deadline": "2026-11-30T11:00:00Z",
+    "priority": "HIGH",
+    "category": "STUDY",
+    "estimatedDurationMinutes": 90
   }'
 ```
+*Không gửi `status` (Backend gán `TODO`) hay `ownerUserId` (lấy từ token).*
 
 ---
 
 ## 8. Quy chuẩn khi Thêm Module Mới
 
-Khi phát triển một nghiệp vụ mới (ví dụ: `comment` - bình luận công việc), thực hiện theo các bước sau:
+Khi phát triển một module nghiệp vụ (ví dụ: `notification` - thông báo, bảng `notifications`), thực hiện theo các bước sau:
 
 1. **Tạo thư mục module**:
-   Tạo package `group16.webapp.modules.comment` với cấu trúc con:
-   - `entity/`: `Comment.java` kế thừa `AuditableEntity` (bảng có `created_at` + `updated_at`) hoặc `BaseEntity`. Lưu `taskId`, `userId` bằng `Long`. Bảng mới = migration Flyway mới.
-   - `repository/`: `CommentRepository.java` kế thừa `JpaRepository`.
-   - `dto/`: `CommentRequest.java`, `CommentResponse.java`.
-   - `mapper/`: `CommentMapper.java`.
-   - `service/`: `CommentService.java` và `impl/CommentServiceImpl.java`.
-   - `controller/`: `CommentController.java` (`@RestController`, `@RequestMapping("/v1/comments")`).
-   - `api/` *(Tùy chọn)*: Tạo `CommentApi.java` nếu có module khác cần lấy thông tin bình luận.
+   Tạo package `group16.webapp.modules.notification` với cấu trúc con:
+   - `entity/`: `Notification.java`. Bảng có cả `created_at` + `updated_at` → kế thừa `AuditableEntity`; bảng chỉ có `created_at` (như `notifications`) → kế thừa `BaseEntity` và tự khai báo `@CreatedDate Instant createdAt`. Lưu `userId` bằng `Long`. Bảng mới = migration Flyway mới (`V<n>__create_notifications_table.sql`), khớp ERD.
+   - `repository/`: `NotificationRepository.java` kế thừa `JpaRepository`.
+   - `dto/`: `NotificationResponse.java` (không trả Entity ra API).
+   - `mapper/`: `NotificationMapper.java`.
+   - `service/`: `NotificationService.java` và `impl/NotificationServiceImpl.java`.
+   - `controller/`: `NotificationController.java` (`@RestController`, `@RequestMapping("/v1/notifications")`).
+   - `api/` *(Tùy chọn)*: `NotificationApi.java` để module khác (Assignment, Schedule) tạo thông báo.
 
 2. **Nếu module cần thông tin từ module khác**:
    - Tiêm interface `Api` tương ứng (Ví dụ: cần kiểm tra Task có tồn tại hay không thì tiêm `TaskApi`).
-   - Tuyệt đối không tiêm `TaskRepository` hay `TaskService` vào `CommentServiceImpl`.
+   - Tuyệt đối không tiêm `TaskRepository` hay `TaskService` vào `NotificationServiceImpl`.
 
-3. **Khai báo mã lỗi mới trong `ErrorCode`**:
-   Thêm các lỗi nghiệp vụ riêng vào `group16.webapp.common.exception.ErrorCode`:
+3. **Mã lỗi trong `ErrorCode`**:
+   Ưu tiên mã chung theo tài liệu (`RESOURCE_NOT_FOUND`, `FORBIDDEN`, `INVALID_INPUT`…) kèm `message` cụ thể. Chỉ thêm mã mới khi tài liệu định nghĩa, ví dụ:
    ```java
-   COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "Comment not found"),
+   INVALID_TIME_RANGE(HttpStatus.BAD_REQUEST, "Invalid time range"),
    ```
 
 4. **Cập nhật quyền trong `SecurityConfig` (nếu cần)**:

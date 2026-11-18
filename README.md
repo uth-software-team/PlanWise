@@ -146,4 +146,4 @@ git push -u origin feature/task-crud
 ## 7. Tài liệu liên quan
 - [Code/backend/README.md](Code/backend/README.md) — kiến trúc backend, luồng request, xử lý lỗi, quy chuẩn thêm module
 - [CLAUDE.md](CLAUDE.md) — quy tắc chung của dự án
-- [PlanWise Document/](PlanWise%20Document/) — tài liệu thiết kế: file Word (use case, class diagram, ERD, business rules BR-01..BR-32), ảnh giao diện, sơ đồ use case / class / ERD
+- [PlanWise Document/](PlanWise%20Document/) — tài liệu thiết kế: file Word (use case, class diagram, API, business rules BR-01..BR-15, hard constraints HC-01..HC-09), ảnh giao diện, sơ đồ use case / class / ERD

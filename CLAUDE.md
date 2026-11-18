@@ -28,7 +28,7 @@ Do NOT build frontend unless explicitly asked.
 
 ## Source of Truth (priority)
 1. Latest instruction from the user. 2. Newer team-approved decisions.
-3. `PlanWise Document/PlanWise AI Document .docx` (Nov 2026: use cases, class diagram, ERD, data dictionary, BR-01..BR-32).
+3. `PlanWise Document/PlanWise AI Document .docx` (Nov 2026: use cases, class diagram, API overview, BR-01..BR-15, HC-01..HC-09) + `PlanWise Document/system design/ERD.png` (12 tables). Team decisions that override it: `Code/backend/CLAUDE.md` > Team Decisions.
 4. `PlanWise Document/PlanWise AI Project.docx` (handover 2026-10-30, partly outdated; not available locally).
 5. Your own proposals.
 Code shows implementation status but does not override approved requirements. On conflicts, report them with options; never pick silently. If docs are unreadable, say so; never claim to have read them.
