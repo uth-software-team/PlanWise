@@ -51,6 +51,18 @@ public class User extends AuditableEntity {
         }
     }
 
+    /** Class diagram: updateProfile(name, zoneId). Caller validates the IANA timezone. */
+    public void updateProfile(String fullName, String timezone) {
+        this.fullName = fullName;
+        this.timezone = timezone;
+    }
+
+    /** Display window only (BR-07: it does not limit the scheduling engine). Caller ensures start < end. */
+    public void updatePlanningWindow(LocalTime planningStart, LocalTime planningEnd) {
+        this.planningStart = planningStart;
+        this.planningEnd = planningEnd;
+    }
+
     public void deactivate() { this.active = false; }
 
     public String getEmail() { return email; }
