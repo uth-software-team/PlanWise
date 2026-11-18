@@ -13,7 +13,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | F-01 | Module skeleton + quy ước gọi chéo module | TV1 | P0 | 2 | — | `modules/*/package-info.java`, `Code/backend/README.md` | `feature/foundation-module-skeleton` | Đủ 9 package (CG-01); quy ước CG-02 ghi trong README | `./gradlew build` | 11-18 |
 | F-04 | `ErrorCode` (CG-05) + `ConflictErrorDto` + `ConflictErrorResponse` + `NotificationApi` no-op | TV1 | P0 | 2 | — | `common/exception`, `common/dto`, `modules/notification` | (cùng F-01) | Đủ mọi mã lỗi trước 11-19 để owner không phải sửa `ErrorCode`; bean no-op inject được | `GlobalExceptionHandlerTests` thêm case 409 `conflicts[]` | 11-18 |
-| F-02 | V2, V9 + bảng cấp số + review nháp V3..V10 + chạy thử chuỗi trên PostgreSQL | TV1 | P0 | 3 | F-01, contract PRs | `src/main/resources/db/migration` | `feature/db-auth-notification-schema` | V2..V10 merge đúng thứ tự; khớp ERD (trừ `rest_blocks`); `bootRun` trên PG có log `PgConnection`, Flyway lên v10, `ddl-auto=validate` không lỗi | bootRun PG (log) | 11-19 16:00 |
+| F-02 | V2, V3 (merge 11-18) + bảng cấp số + review/merge nháp V4..V10 + chạy thử chuỗi trên PostgreSQL | TV1 | P0 | 3 | F-01, contract PRs | `src/main/resources/db/migration` | `feature/db-auth-notification-schema` | V2..V10 merge đúng thứ tự (mỗi PR một dải số liền nhau); khớp ERD (trừ `rest_blocks`); `bootRun` trên PG có log `PgConnection`, Flyway lên v10, `ddl-auto=validate` không lỗi | bootRun PG (log) | 11-19 16:00 |
 | F-05 | Snapshot OpenAPI | TV1 | P0 | 1 | TK-01, SC-01, GR-01 | `docs/api/openapi-v1.json` | `docs/api-contract-v1` | Đủ mọi endpoint MVP dưới `/api/v1` | Đối chiếu bảng "Tổng quan REST API" của doc | 11-20 10:00 |
 | F-03 | Testcontainers + job CI `pg` | TV1 | P0 | 3 | F-02 | `build.gradle`, `MigrationPgTests`, `.github/workflows/` | `test/db-migration-pg` | `@Tag("pg")` chạy Flyway + `validate` trên postgres:16 trong CI; job `test` mặc định không cần Docker | pg | 11-25 |
 | QA-01 | Checklist freeze backend | TV1 | P0 | 2 | BE P0 | — | — | Không còn stub 501 (trừ AI-02 theo CG-09a); snapshot OpenAPI cập nhật; bootRun PG ok | `./gradlew build` | 11-25 |
@@ -31,7 +31,7 @@
 
 | ID | Task | Owner | P | h | Depends | Files/Modules | Branch | Acceptance Criteria | Tests | Date |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TK-00 | Nháp migration V3 `tasks`, V4 `availability_rules`, V5 `fixed_events` | TV3 | P0 | 2 | ERD | `db/migration` | trong `feature/contract-task-availability` | Khớp ERD; CHECK ONCE/WEEKLY như ERD | review TV1 | 11-18 (nộp 11-19 sáng) |
+| TK-00 | Nháp migration V4 `tasks`, V5 `availability_rules`, V6 `fixed_events` | TV3 | P0 | 2 | ERD | `db/migration` | trong `feature/contract-task-availability` | Khớp ERD; CHECK ONCE/WEEKLY như ERD | review TV1 | 11-18 (nộp 11-19 sáng) |
 | TK-01 | Contract Task/Availability/FixedEvent/Calendar + interface CG-06 | TV3 | P0 | 5 | F-01, F-04 | `modules/task`, `modules/availability` | `feature/contract-task-availability` | DTO records + controller stub 501 hiện trong Swagger; `TaskApi`, `AvailabilityApi`, `CalendarApi` có chữ ký | build | 11-19 |
 | TK-02 | Task entity + CRUD (gồm test) | TV3 | P0 | 7 | F-02, TK-01 | `modules/task` | `feature/task-crud` | BR-01/02/03; owner-only (user khác → 404); soft delete; `version`; `isOverdue` tính, không lưu | WebMvc + service | 11-21 |
 | TK-03 | `PATCH /tasks/{id}/status` + filter + paging (gồm test) | TV3 | P0 | 3 | TK-02 | `modules/task` | `feature/task-status-filter` | Lọc status/priority/deadline; `PageResponse` | tests | 11-21 |
@@ -48,7 +48,7 @@
 | ID | Task | Owner | P | h | Depends | Files/Modules | Branch | Acceptance Criteria | Tests | Date |
 |---|---|---|---|---|---|---|---|---|---|---|
 | SC-02 | Engine model + `TimeInterval` + tính free slots | TV2 | P0 | 6 | — | `modules/schedule/engine` | `feature/schedule-engine-slots` | Java thuần, không Spring; available − busy; half-open | unit ≥ 8 | 11-20 |
-| SC-01 | Contract scheduling + `ScheduleApi` + nháp V8 | TV2 | P0 | 5 | F-04 | `modules/schedule`, `db/migration` | `feature/contract-schedule` | Theo CG-07; stub 501 trong Swagger; V8 khớp ERD (`version`, UNIQUE, FK composite) | build | 11-19 |
+| SC-01 | Contract scheduling + `ScheduleApi` + nháp V10 | TV2 | P0 | 5 | F-04 | `modules/schedule`, `db/migration` | `feature/contract-schedule` | Theo CG-07; stub 501 trong Swagger; V10 khớp ERD (`version`, UNIQUE, FK composite) | build | 11-19 |
 | SC-03 | Allocation xác định + earliest-fit + reasons | TV2 | P0 | 8 | SC-02 | `modules/schedule/engine` | `feature/schedule-engine-allocation` | Sắp xếp: priority desc, deadline asc, remaining, createdAt, taskId; BR-08 (1 session liên tục/task); `INSUFFICIENT_TIME`, `DEADLINE_PASSED`; deterministic | unit ≥ 12 (deadline, overload, hoà) | 11-21 |
 | SC-04 | `ConstraintValidator` HC-01..09 | TV2 | P0 | 6 | SC-02 | `modules/schedule/engine` | `feature/schedule-constraint-validator` | Trả đúng mã cho từng HC | unit ≥ 1 case/HC | 11-22 |
 | SC-05a | Proposal/Session entity + generate service/endpoint trên interface mock | TV2 | P0 | 5 | SC-03, SC-01 (interface CG-06) | `modules/schedule` | `feature/schedule-generate` | Chỉ tạo PROPOSED; 1 batch PROPOSED/user (batch cũ bị thay); không đụng CONFIRMED/COMPLETED; 200 + `unscheduledTasks` | service (Mockito) + WebMvc | 11-23 |
@@ -60,13 +60,13 @@
 
 | ID | Task | Owner | P | h | Depends | Files/Modules | Branch | Acceptance Criteria | Tests | Date |
 |---|---|---|---|---|---|---|---|---|---|---|
-| GR-00 | Nháp migration V6 `team_groups`+`group_members`, V7 `task_assignments` (partial unique PENDING/ACCEPTED), V10 `ai_request_logs` | TV4 | P0 | 2 | ERD | `db/migration` | trong `feature/contract-group-assignment-ai` | Khớp ERD | review TV1 | 11-18 (nộp 11-19 sáng) |
+| GR-00 | Nháp migration V7 `team_groups`+`group_members`, V8 `task_assignments` (partial unique PENDING/ACCEPTED), V9 `ai_request_logs` | TV4 | P0 | 2 | ERD | `db/migration` | trong `feature/contract-group-assignment-ai` | Khớp ERD | review TV1 | 11-18 (nộp 11-19 sáng) |
 | GR-01 | Contract group/member/assignment/AI + interface CG-06 | TV4 | P0 | 5 | F-04 | `modules/group`, `modules/assignment`, `modules/ai` | `feature/contract-group-assignment-ai` | Stub 501 trong Swagger; `GroupAccessApi`, `AssignmentApi` có chữ ký | build | 11-19 |
 | GR-02 | Group CRUD (creator = LEADER) | TV4 | P0 | 6 | F-02 | `modules/group` | `feature/group-crud` | Chỉ member xem; chỉ leader sửa | tests | 11-20 |
 | GR-03 | Members (thêm bằng email, đổi role, xoá, rời) + `GroupAccessApi` | TV4 | P0 | 6 | GR-02 | `modules/group` | `feature/group-members` | BR-06; UNIQUE(group, user); không lộ lịch cá nhân | permission tests | 11-21 |
 | AS-01 | Leader giao task + kiểm tra BR-04 ở service | TV4 | P0 | 6 | GR-03, TK-04 | `modules/assignment` | `feature/assignment-create` | Tạo group task qua `createGroupTask` (1 record `tasks`); PENDING; task đã có PENDING/ACCEPTED → 409 `ASSIGNMENT_ALREADY_ACTIVE` | tests | 11-22 |
 | AS-02 | Accept / decline (reason) / revoke + list + notify | TV4 | P0 | 4 | AS-01 | `modules/assignment` | `feature/assignment-respond` | BR-05; decline thiếu reason → 400; trạng thái Assignment độc lập Task; `acceptedTaskIds` impl | permission matrix | 11-23 |
-| AS-PG | Test `@Tag("pg")` partial unique index V7 | TV4 | P0 | 1 | F-03, AS-01 | tests | `test/assignment-unique-pg` | 2 PENDING cùng task → vi phạm; DECLINED + PENDING được phép | pg | 11-26 |
+| AS-PG | Test `@Tag("pg")` partial unique index V8 | TV4 | P0 | 1 | F-03, AS-01 | tests | `test/assignment-unique-pg` | 2 PENDING cùng task → vi phạm; DECLINED + PENDING được phép | pg | 11-26 |
 | AI-01 | `AiClient` + `GeminiAiClient` + `FakeAiClient` | TV4 | P0 | 5 | GR-01 | `modules/ai` | `feature/ai-client` | RestClient timeout 5s; key chỉ từ env; Fake khi thiếu key | `MockRestServiceServer`: timeout, 429, JSON sai | 11-24 |
 | AI-02 | `POST /v1/ai/tasks/parse` + validate output + `ai_request_logs` | TV4 | P0 | 7 | AI-01 | `modules/ai` | `feature/ai-task-parse` | Trả draft, không lưu task; validate title/duration/priority/deadline; lỗi → 503 `AI_UNAVAILABLE`; log hash | tests | 11-25 (freeze riêng 11-26 12:00 nếu cần) |
 | GR-04 | `GET /v1/groups/{id}/availability` chỉ BUSY | TV1 | P0 | 2 | GR-03, CAL-01 | `modules/group` | `feature/group-availability` | Member/leader chỉ thấy khoảng BUSY; không title/note | privacy test | 11-26 |

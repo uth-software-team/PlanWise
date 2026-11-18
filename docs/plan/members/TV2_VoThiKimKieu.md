@@ -7,7 +7,7 @@
 - Owner **Smart Scheduling & Schedule Management** (BE + FE) — phần khó nhất, nằm trên **critical path**.
 - Scheduling Engine là Java thuần, deterministic, không phụ thuộc LLM (G5, CG-07).
 
-**Package/file sở hữu:** `modules/schedule/**` (gồm `engine/`), nháp migration V8 (`schedule_proposals`, `schedule_sessions`), FE `features/calendar`, `features/schedule`.
+**Package/file sở hữu:** `modules/schedule/**` (gồm `engine/`), nháp migration V10 (`schedule_proposals`, `schedule_sessions`), FE `features/calendar`, `features/schedule`.
 
 **Tổng giờ:** 90h = BE 47 · FE 22 · Review 1 · Báo cáo 5 · Integration 15.
 
@@ -18,7 +18,7 @@
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
 | SC-02 | Engine model + `TimeInterval` + free slots | P0 | 6 | — | `feature/schedule-engine-slots` | Java thuần; available − busy; half-open | unit ≥ 8 | 11-20 |
-| SC-01 | Contract scheduling + `ScheduleApi` + nháp V8 | P0 | 5 | F-04 | `feature/contract-schedule` | Theo CG-07; stub 501; V8 khớp ERD | build | 11-19 |
+| SC-01 | Contract scheduling + `ScheduleApi` + nháp V10 | P0 | 5 | F-04 | `feature/contract-schedule` | Theo CG-07; stub 501; V10 khớp ERD | build | 11-19 |
 | SC-03 | Allocation xác định + earliest-fit + reasons | P0 | 8 | SC-02 | `feature/schedule-engine-allocation` | priority desc, deadline asc, remaining, createdAt, taskId; BR-08; `INSUFFICIENT_TIME`, `DEADLINE_PASSED` | unit ≥ 12 | 11-21 |
 | SC-04 | `ConstraintValidator` HC-01..09 | P0 | 6 | SC-02 | `feature/schedule-constraint-validator` | Đúng mã từng HC | unit ≥ 1/HC | 11-22 |
 | SC-05a | Proposal/Session entity + generate trên mock | P0 | 5 | SC-03, SC-01 | `feature/schedule-generate` | Chỉ PROPOSED; 1 batch/user; không đụng CONFIRMED; 200 + `unscheduledTasks` | Mockito + WebMvc | 11-23 |
@@ -35,7 +35,7 @@
 ## Lịch từng ngày
 
 - [ ] **11-18 (T4):** setup env (`bash scripts/install-hooks.sh`, `./scripts/setup-dev.sh --docker`, `./gradlew build`); đọc doc phần Scheduling + HC; SC-02 (4h).
-- [ ] **11-19 (T5):** SC-01 + nháp V8 (mở PR trước 11:00); SC-02 tiếp.
+- [ ] **11-19 (T5):** SC-01 + nháp V10 (mở PR trước 11:00); SC-02 tiếp.
 - [ ] **11-20 (T6):** SC-02 xong; SC-03.
 - [ ] **11-21 (T7):** SC-03 xong; SC-04.
 - [ ] **11-22 (CN):** SC-04 xong; SC-05a (entity, repo, service với mock interface).

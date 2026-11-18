@@ -6,8 +6,8 @@ Giả định: 6h làm thật/ngày (11-18 ~4h, 12-03 ~2h); làm cả cuối tu�
 
 | Date | TV1 Kiệt | TV2 Kiều | TV3 Khôi | TV4 Thư | Deliverable / Gate |
 |---|---|---|---|---|---|
-| 11-18 T4 | F-01, F-04; mời teammate, đặt ruleset approvals = 1 | Setup env; SC-02 (4h) | Setup env; TK-00 nháp V3-5 | Setup env; GR-00 nháp V6, V7, V10 | Skeleton PR |
-| 11-19 T5 | F-02 (V2, V9, cấp số); review + merge V2→V10 đúng thứ tự; chạy thử PG | SC-01 + nháp V8; SC-02 | TK-01 | GR-01 | **✅ DB ready (16:00)**; contract PRs merged |
+| 11-18 T4 | F-01, F-04; mời teammate, đặt ruleset approvals = 1 | Setup env; SC-02 (4h) | Setup env; TK-00 nháp V4-6 | Setup env; GR-00 nháp V7, V8, V9 | Skeleton PR |
+| 11-19 T5 | F-02: V2, V3 đã merge 11-18; review + merge V4→V10 theo thứ tự TK-01 → GR-01 → SC-01; chạy thử PG | SC-01 + nháp V10; SC-02 | TK-01 | GR-01 | **✅ DB ready (16:00)**; contract PRs merged |
 | 11-20 T6 | F-05 (10:00); AU-01; AU-02 | SC-02 xong; SC-03 | TK-02 | GR-02 | **✅ API contract frozen 10:00** |
 | 11-21 T7 | AU-02 xong; AU-03; FE-00 | SC-03 xong; SC-04 | TK-02 xong; TK-03; TK-04 | GR-03 | **✅ Security ready**; Tasks API merged |
 | 11-22 CN | FE-00 xong; FE-01 (merge 16:00); FE-02 | SC-04 xong; SC-05a | AV-02; AV-04 | AS-01 | Group API merged |

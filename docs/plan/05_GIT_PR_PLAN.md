@@ -44,7 +44,7 @@ Thêm: ≥ 1 approval (khôi phục ruleset approvals = 1 khi teammate vào repo
 ## Thứ tự merge
 
 1. F-01 / F-04 (11-18)
-2. Contract PRs kèm nháp migration + F-02 (11-19): F-02 (V2, V9) → TK-01 (V3–V5) → GR-01 (V6, V7, V10) → SC-01 (V8). Tất cả merge xong trong ngày 11-19; **không ai apply migration lên PostgreSQL local trước gate DB ready**, nên Flyway luôn thấy đủ V2..V10 và chạy đúng thứ tự số. TV1 chạy thử cả chuỗi trên PG sau khi PR cuối merge rồi mới công bố DB ready.
+2. Contract PRs kèm nháp migration + F-02 (11-19): F-02 (V2, V3 — đã merge 11-18) → TK-01 (V4–V6) → GR-01 (V7–V9) → SC-01 (V10). Tất cả merge xong trong ngày 11-19; **không ai apply migration lên PostgreSQL local trước gate DB ready**, nên Flyway luôn thấy đủ V2..V10 và chạy đúng thứ tự số. TV1 chạy thử cả chuỗi trên PG sau khi PR cuối merge rồi mới công bố DB ready.
 3. F-05 (11-20 10:00)
 4. AU, TK, GR, SC-02..04 song song
 5. AV-02/04 → AS-01/02 → SC-05a

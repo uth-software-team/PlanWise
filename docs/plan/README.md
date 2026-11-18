@@ -52,7 +52,7 @@ Phê duyệt: 2026-11-18 (v2.1). Mọi thay đổi kế hoạch phải qua PR v�
 - **R-Review:** mỗi PR được review trong ≤ 4h làm việc; 2 khung review/ngày **11:00** và **16:00**.
 - **R-FE:** owner bắt đầu FE của module mình ngay khi API module đó merge và FE-01 (router) đã merge, miễn không làm trễ việc BE mà người khác đang chờ.
 - **R-P1:** ND-01, FE-ND, AU-04, DB-01, FE-DB mặc định **CUT**; chỉ làm sau gate 11-30 khi được duyệt, không dùng 2 ngày đệm.
-- **R-Migration:** owner viết nháp migration bảng mình; TV1 cấp số, review và merge đúng thứ tự V2→V10 trong ngày 11-19; không apply lên PostgreSQL local trước gate DB ready.
+- **R-Migration:** owner viết nháp migration bảng mình; TV1 cấp số, review và merge theo thứ tự TK-01 (V4–V6) → GR-01 (V7–V9) → SC-01 (V10) trong ngày 11-19 (V2, V3 đã merge 11-18); không apply lên PostgreSQL local trước gate DB ready.
 
 ## Giả định
 

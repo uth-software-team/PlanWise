@@ -7,7 +7,7 @@
 - Owner **Team Management**, **Task Assignment**, **AI Task Parsing (Gemini)** (BE + FE).
 - Reviewer chính cho Task/AV-02/04 và toàn bộ FE của TV2, TV3.
 
-**Package/file sở hữu:** `modules/group`, `modules/assignment`, `modules/ai`, nháp migration V6 `team_groups` + `group_members`, V7 `task_assignments`, V10 `ai_request_logs`; FE `features/groups`, `features/assignments`, `features/ai`.
+**Package/file sở hữu:** `modules/group`, `modules/assignment`, `modules/ai`, nháp migration V7 `team_groups` + `group_members`, V8 `task_assignments`, V9 `ai_request_logs`; FE `features/groups`, `features/assignments`, `features/ai`.
 
 **Tổng giờ:** 90h = BE 45 · FE 22 · Review 5 · Báo cáo 5 · Integration 13.
 
@@ -17,7 +17,7 @@
 
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
-| GR-00 | Nháp V6, V7 (partial unique PENDING/ACCEPTED), V10 | P0 | 2 | ERD | trong `feature/contract-group-assignment-ai` | Khớp ERD | review TV1 | 11-18 |
+| GR-00 | Nháp V7, V8 (partial unique PENDING/ACCEPTED), V9 | P0 | 2 | ERD | trong `feature/contract-group-assignment-ai` | Khớp ERD | review TV1 | 11-18 |
 | GR-01 | Contract group/member/assignment/AI + interface | P0 | 5 | F-04 | `feature/contract-group-assignment-ai` | Stub 501; chữ ký `GroupAccessApi`, `AssignmentApi` | build | 11-19 |
 | GR-02 | Group CRUD (creator = LEADER) | P0 | 6 | F-02 | `feature/group-crud` | Member xem; leader sửa | tests | 11-20 |
 | GR-03 | Members + `GroupAccessApi` | P0 | 6 | GR-02 | `feature/group-members` | BR-06; UNIQUE(group, user) | permission | 11-21 |
@@ -25,7 +25,7 @@
 | AS-02 | Accept / decline / revoke + list + notify | P0 | 4 | AS-01 | `feature/assignment-respond` | BR-05; decline thiếu reason → 400; `acceptedTaskIds` | permission matrix | 11-23 |
 | AI-01 | `AiClient` + Gemini + Fake | P0 | 5 | GR-01 | `feature/ai-client` | Timeout 5s; key chỉ từ env; Fake khi thiếu key | `MockRestServiceServer` | 11-24 |
 | AI-02 | `POST /v1/ai/tasks/parse` + validate + log | P0 | 7 | AI-01 | `feature/ai-task-parse` | Draft, không lưu; 503 khi lỗi; log hash | tests | 11-25 (freeze riêng 11-26 12:00 nếu cần) |
-| AS-PG | `@Tag("pg")` partial unique V7 | P0 | 1 | F-03, AS-01 | `test/assignment-unique-pg` | 2 PENDING → vi phạm; DECLINED + PENDING ok | pg | 11-26 |
+| AS-PG | `@Tag("pg")` partial unique V8 | P0 | 1 | F-03, AS-01 | `test/assignment-unique-pg` | 2 PENDING → vi phạm; DECLINED + PENDING ok | pg | 11-26 |
 | FE-GR-01 | Groups + members | P0 | 6 | FE-01, GR-03 | `feature/fe-groups` | | E2E thủ công | 11-23 → 11-26 |
 | FE-AS-01 | Leader giao task + danh sách | P0 | 5 | AS-02 | `feature/fe-assignments` | | E2E thủ công | 11-27 |
 | FE-AS-02 | Inbox accept/decline + lưới BUSY/FREE | P0 | 6 | FE-AS-01, GR-04 | (cùng FE-AS-01) | Không hiện title riêng tư; luồng 4 + 6 | E2E thủ công | 11-28 |
@@ -35,7 +35,7 @@
 
 ## Lịch từng ngày
 
-- [ ] **11-18 (T4):** setup env (`bash scripts/install-hooks.sh`, `./scripts/setup-dev.sh --docker`, `./gradlew build`); đọc doc phần Group/Assignment/AI + ERD; GR-00 nháp V6, V7, V10.
+- [ ] **11-18 (T4):** setup env (`bash scripts/install-hooks.sh`, `./scripts/setup-dev.sh --docker`, `./gradlew build`); đọc doc phần Group/Assignment/AI + ERD; GR-00 nháp V7, V8, V9.
 - [ ] **11-19 (T5):** GR-01 (mở PR kèm nháp migration trước 11:00); sửa theo review TV1.
 - [ ] **11-20 (T6):** GR-02.
 - [ ] **11-21 (T7):** GR-03.
