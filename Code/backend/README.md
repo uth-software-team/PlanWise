@@ -372,11 +372,25 @@ curl -X POST http://localhost:8080/api/v1/auth/logout -H "Authorization: Bearer 
 ```
 `204` khi có token hợp lệ, `401 UNAUTHENTICATED` khi không có. Server không lưu phiên (JWT stateless): client tự xoá token.
 
-#### 3. Lấy thông tin tài khoản hiện tại:
+#### 3. Xem và sửa hồ sơ hiện tại (đã hiện thực — AU-03):
 ```bash
 curl -X GET http://localhost:8080/api/v1/users/me \
   -H "Authorization: Bearer <TOKEN>"
+
+curl -X PUT http://localhost:8080/api/v1/users/me \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fullName": "Nguyen Van A",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "planningStart": "08:00",
+    "planningEnd": "18:00"
+  }'
 ```
+- Cả hai trả `200` + hồ sơ (cùng dạng `data.user` của login). `userId` luôn lấy từ token, không nhận từ client.
+- Chỉ đổi được `fullName` (bắt buộc, ≤ 100), `timezone` (bắt buộc, IANA) và khung giờ hiển thị `planningStart`/`planningEnd` (tùy chọn, **gửi cả hai hoặc không gửi**; không gửi thì giữ nguyên). `email`, `id`, `password` trong body bị bỏ qua.
+- Khung giờ chỉ để hiển thị, **không giới hạn Scheduling Engine** (BR-07).
+- Lỗi: `400 INVALID_INPUT` (field sai, timezone không phải IANA, chỉ gửi một trong hai mốc giờ), `400 INVALID_TIME_RANGE` (`planningStart` ≥ `planningEnd`), `401 UNAUTHENTICATED` (thiếu token, hoặc tài khoản đã bị khoá/xoá dù token còn hạn).
 
 #### 4. Tạo công việc cá nhân:
 ```bash
