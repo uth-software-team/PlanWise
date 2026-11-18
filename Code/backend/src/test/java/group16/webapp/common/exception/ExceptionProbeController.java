@@ -1,5 +1,6 @@
 package group16.webapp.common.exception;
 
+import group16.webapp.common.dto.ConflictErrorDto;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -12,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /** Test-only endpoints (test classpath) that raise each exception type handled by GlobalExceptionHandler. */
 @RestController
@@ -33,6 +36,23 @@ class ExceptionProbeController {
 	@GetMapping("/app")
 	String app() {
 		throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
+	}
+
+	@GetMapping("/conflicts")
+	String conflicts() {
+		throw AppException.conflicts(List.of(
+				new ConflictErrorDto(11L, ConflictCode.SESSION_OVERLAP, "Overlaps session 7"),
+				new ConflictErrorDto(12L, ConflictCode.DEADLINE_EXCEEDED, "Ends after the deadline")));
+	}
+
+	@GetMapping("/not-implemented")
+	String notImplemented() {
+		throw new AppException(ErrorCode.NOT_IMPLEMENTED);
+	}
+
+	@GetMapping("/ai")
+	String ai() {
+		throw new AppException(ErrorCode.AI_UNAVAILABLE);
 	}
 
 	@GetMapping("/stale")

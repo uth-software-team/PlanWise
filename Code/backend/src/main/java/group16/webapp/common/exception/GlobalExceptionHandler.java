@@ -38,9 +38,9 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(AppException.class)
-    public ResponseEntity<ApiResponse<Void>> handleApp(AppException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleApp(AppException ex) {
         ErrorCode ec = ex.getErrorCode();
-        return ResponseEntity.status(ec.getStatus()).body(ApiResponse.error(ec, ex.getMessage(), null));
+        return ResponseEntity.status(ec.getStatus()).body(ApiResponse.error(ec, ex.getMessage(), ex.getData()));
     }
 
     /** @Valid on a @RequestBody: data = { field: message }. */
