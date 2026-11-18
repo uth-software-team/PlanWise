@@ -33,9 +33,28 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-security-test'
+	// PostgreSQL tests (@Tag("pg"), run by ./gradlew pgTest). Versions come from the Spring Boot BOM.
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+// Default tests run on H2 and need no Docker; PostgreSQL tests are excluded here.
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'pg'
+	}
+}
+
+// PostgreSQL tests on a throwaway Testcontainers database (requires Docker): ./gradlew pgTest
+tasks.register('pgTest', Test) {
+	description = 'Runs @Tag("pg") tests against PostgreSQL via Testcontainers (requires Docker).'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'pg'
+	}
+	shouldRunAfter tasks.named('test')
 }
