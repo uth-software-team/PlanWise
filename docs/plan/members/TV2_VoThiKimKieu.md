@@ -18,7 +18,7 @@
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
 | SC-02 | Engine model + `TimeInterval` + free slots | P0 | 6 | — | `feature/schedule-engine-slots` | Java thuần; available − busy; half-open | unit ≥ 8 | 11-20 |
-| SC-01 | Contract scheduling + `ScheduleQueryService` + nháp V8 | P0 | 5 | F-04 | `feature/contract-schedule` | Theo CG-07; stub 501; V8 khớp ERD | build | 11-19 |
+| SC-01 | Contract scheduling + `ScheduleApi` + nháp V8 | P0 | 5 | F-04 | `feature/contract-schedule` | Theo CG-07; stub 501; V8 khớp ERD | build | 11-19 |
 | SC-03 | Allocation xác định + earliest-fit + reasons | P0 | 8 | SC-02 | `feature/schedule-engine-allocation` | priority desc, deadline asc, remaining, createdAt, taskId; BR-08; `INSUFFICIENT_TIME`, `DEADLINE_PASSED` | unit ≥ 12 | 11-21 |
 | SC-04 | `ConstraintValidator` HC-01..09 | P0 | 6 | SC-02 | `feature/schedule-constraint-validator` | Đúng mã từng HC | unit ≥ 1/HC | 11-22 |
 | SC-05a | Proposal/Session entity + generate trên mock | P0 | 5 | SC-03, SC-01 | `feature/schedule-generate` | Chỉ PROPOSED; 1 batch/user; không đụng CONFIRMED; 200 + `unscheduledTasks` | Mockito + WebMvc | 11-23 |
@@ -57,23 +57,23 @@ Khung review mỗi ngày: 11:00 và 16:00.
 
 **Upstream (tôi chờ):**
 - TV1: F-04 (11-18) → SC-01; DB ready (11-19) → SC-05a entity.
-- TV3: `TaskQueryService` impl TK-04 (11-21), AV-04 (11-23), **AV-03 (11-24 11:00)** → SC-05b; CAL-01 (11-25) → FE-CAL.
-- TV4: `AssignmentQueryService` AS-02 (11-23) → SC-05b.
+- TV3: `TaskApi` impl TK-04 (11-21), AV-04 (11-23), **AV-03 (11-24 11:00)** → SC-05b; CAL-01 (11-25) → FE-CAL.
+- TV4: `AssignmentApi` AS-02 (11-23) → SC-05b.
 - TV1: FE-02/03 (11-23) → FE.
 
 **Downstream (chờ tôi):**
-- TV3: `ScheduleQueryService` (interface 11-19; impl SC-05a 11-23) → CAL-01.
+- TV3: `ScheduleApi` (interface 11-19; impl SC-05a 11-23) → CAL-01.
 - Cả nhóm: SC-07 + FE-SC-03 → gate 11-30 (luồng 3, 4).
 
 ## API sở hữu / tiêu thụ
 
 | Sở hữu | Tiêu thụ |
 |---|---|
-| `POST /v1/schedules/generate` | `TaskQueryService` (TV3) |
-| `GET/DELETE /v1/schedules/proposals/{proposalId}` | `AvailabilityQueryService` (TV3) |
-| `PUT/DELETE /v1/schedules/sessions/{id}` | `AssignmentQueryService.acceptedTaskIds` (TV4) |
+| `POST /v1/schedules/generate` | `TaskApi` (TV3) |
+| `GET/DELETE /v1/schedules/proposals/{proposalId}` | `AvailabilityApi` (TV3) |
+| `PUT/DELETE /v1/schedules/sessions/{id}` | `AssignmentApi.acceptedTaskIds` (TV4) |
 | `POST /v1/schedules/{proposalId}/confirm` | `GET /v1/calendar` (TV3) — cho FE-CAL |
-| `ScheduleQueryService` (sessions theo khoảng) | |
+| `ScheduleApi` (sessions theo khoảng) | |
 
 ## PR tôi phải review (SLA ≤ 4h, khung 11:00 / 16:00)
 

@@ -22,7 +22,7 @@ Nguồn thiết kế: `PlanWise Document/PlanWise AI Document .docx` (BR-01..15,
 
 ## 2. Foundation blockers (TV1, theo thứ tự)
 
-1. F-01 + F-04: skeleton `modules/*`, `ErrorCode` đầy đủ, `ConflictDto`, `NotificationService` no-op (11-18).
+1. F-01 + F-04: skeleton `modules/*`, `ErrorCode` đầy đủ, `ConflictErrorDto` + `ConflictErrorResponse`, `NotificationApi` no-op (11-18).
 2. F-02: V2, V9 + cấp số + merge V2..V10 đúng thứ tự, chạy thử trên PostgreSQL (11-19).
 3. F-05: snapshot OpenAPI — contract frozen (11-20 10:00).
 4. AU-01..03: User + register/login/JWT 24h + `/users/me` (11-21).

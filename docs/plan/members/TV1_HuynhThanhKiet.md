@@ -18,10 +18,10 @@
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
 | F-01 | Module skeleton + quy ước gọi chéo | P0 | 2 | — | `feature/foundation-module-skeleton` | 9 package; CG-02 trong README | build | 11-18 |
-| F-04 | `ErrorCode` + `ConflictDto` + `NotificationService` no-op | P0 | 2 | — | (cùng F-01) | Đủ mã CG-05 | handler test 409 | 11-18 |
+| F-04 | `ErrorCode` + `ConflictErrorDto` + `ConflictErrorResponse` + `NotificationApi` no-op | P0 | 2 | — | (cùng F-01) | Đủ mã CG-05 | handler test 409 | 11-18 |
 | F-02 | V2, V9 + cấp số + review/merge V3..V10 + chạy thử PG | P0 | 3 | F-01, contract PRs | `feature/db-auth-notification-schema` | Flyway lên v10 trên PG, `validate` ok | bootRun PG | 11-19 16:00 |
 | F-05 | Snapshot OpenAPI | P0 | 1 | TK-01, SC-01, GR-01 | `docs/api-contract-v1` | Đủ endpoint MVP | đối chiếu doc | 11-20 10:00 |
-| AU-01 | `User` entity/repo + `UserQueryService` | P0 | 2 | F-02 | `feature/auth-register-login` | Map đúng V1 | repo | 11-20 |
+| AU-01 | `User` entity/repo + `UserApi` | P0 | 2 | F-02 | `feature/auth-register-login` | Map đúng V1 | repo | 11-20 |
 | AU-02 | Register/login/logout + `JwtService` + 24h | P0 | 5 | AU-01 | (cùng AU-01) | 201/409/401; `exp` 24h; `.env.example` 1440 | WebMvc + service | 11-21 |
 | AU-03 | `GET/PUT /v1/users/me` | P0 | 2 | AU-02 | `feature/auth-profile` | Timezone IANA; planning window hợp lệ | validation | 11-21 |
 | FE-00 | Vite + TS + Tailwind + shadcn + lint + CI FE | P0 | 3 | CG-13 | `feature/fe-scaffold` | lint/build xanh trong CI | build/lint | 11-22 |
@@ -83,11 +83,11 @@ Khung review mỗi ngày: 11:00 và 16:00.
 
 | Sở hữu | Tiêu thụ |
 |---|---|
-| `POST /v1/auth/register`, `/v1/auth/login`, `/v1/auth/logout` | `GroupAccessService` (TV4) — cho GR-04 |
-| `GET/PUT /v1/users/me` | `CalendarQueryService.busyIntervals` (TV3) — cho GR-04 |
+| `POST /v1/auth/register`, `/v1/auth/login`, `/v1/auth/logout` | `GroupAccessApi` (TV4) — cho GR-04 |
+| `GET/PUT /v1/users/me` | `CalendarApi.busyIntervals` (TV3) — cho GR-04 |
 | `GET /v1/groups/{id}/availability` (CG-11) | |
-| `NotificationService` (no-op; thật ở ND-01 — P1) | |
-| `UserQueryService` | |
+| `NotificationApi` (no-op; thật ở ND-01 — P1) | |
+| `UserApi` | |
 | P1: `/v1/auth/password/forgot`, `/v1/auth/password/reset`, `GET /v1/notifications`, `PATCH /v1/notifications/{id}/read` | |
 
 ## PR tôi phải review (SLA ≤ 4h, khung 11:00 / 16:00)
