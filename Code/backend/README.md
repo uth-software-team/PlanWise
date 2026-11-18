@@ -315,7 +315,7 @@ Sau khi khởi động server, truy cập:
 👉 **[http://localhost:8080/api/swagger-ui.html](http://localhost:8080/api/swagger-ui.html)**
 
 **Cách test trên Swagger**:
-1. Gọi API `POST /v1/auth/register` hoặc `POST /v1/auth/login` để lấy `accessToken`.
+1. Gọi `POST /v1/auth/register` để tạo tài khoản, rồi `POST /v1/auth/login` để lấy `accessToken` (chỉ login trả token).
 2. Bấm nút **Authorize** (hình ổ khóa phía trên góc phải) $\rightarrow$ Dán chuỗi token vào $\rightarrow$ Bấm **Authorize**.
 3. Bắt đầu test các API cần xác thực mà không cần điền header thủ công.
 
@@ -325,18 +325,22 @@ Sau khi khởi động server, truy cập:
 
 > ⚠️ Các endpoint dưới đây là **hợp đồng dự kiến** theo bảng "Tổng quan REST API" trong tài liệu thiết kế (thêm tiền tố `/v1`). Chúng chỉ hoạt động khi module tương ứng đã được hiện thực; tên trường trong body có thể thay đổi theo DTO thực tế.
 
-#### 1. Đăng ký tài khoản mới:
+#### 1. Đăng ký tài khoản mới (đã hiện thực — AU-02):
 ```bash
 curl -X POST http://localhost:8080/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@planwise.com",
     "fullName": "Nguyen Van A",
-    "password": "Password123@"
+    "password": "Password123@",
+    "timezone": "Asia/Ho_Chi_Minh"
   }'
 ```
+- `201` + `data` = hồ sơ user (`id`, `email`, `fullName`, `timezone`, `planningStart`, `planningEnd`, `createdAt`). Không trả token.
+- Quy tắc: email hợp lệ (không có khoảng trắng; lưu dạng chữ thường), mật khẩu 8–72 ký tự (tối đa 72 byte UTF-8), `fullName` ≤ 100 ký tự, `timezone` **tùy chọn** (IANA, mặc định `Asia/Ho_Chi_Minh`).
+- Lỗi: `400 INVALID_INPUT` (`data` = `{ field: message }`), `409 EMAIL_ALREADY_EXISTS` (không phân biệt hoa thường).
 
-#### 2. Đăng nhập để lấy Token:
+#### 2. Đăng nhập để lấy Token (đã hiện thực — AU-02):
 ```bash
 curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
@@ -345,7 +349,28 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
     "password": "Password123@"
   }'
 ```
-*Lưu giá trị `accessToken` từ kết quả trả về để gán vào các lệnh bên dưới.*
+```json
+{
+  "success": true,
+  "code": "SUCCESS",
+  "message": "Logged in",
+  "data": {
+    "accessToken": "<jwt>",
+    "tokenType": "Bearer",
+    "expiresAt": "2026-11-19T07:23:08Z",
+    "user": { "id": 1, "email": "user@planwise.com", "fullName": "Nguyen Van A", "timezone": "Asia/Ho_Chi_Minh", "planningStart": "08:00:00", "planningEnd": "18:00:00", "createdAt": "2026-11-18T07:23:07Z" }
+  },
+  "timestamp": "2026-11-18T07:23:08Z"
+}
+```
+*Lưu giá trị `accessToken` để gán vào các lệnh bên dưới.* Token HS256 sống **24 giờ** (`JWT_EXPIRATION_MINUTES`, mặc định `1440`), claim `sub` = userId, `email`; không có refresh token — hết hạn thì đăng nhập lại.
+Sai email, sai mật khẩu hoặc tài khoản bị khoá đều trả cùng `401 INVALID_CREDENTIALS`.
+
+#### Đăng xuất (đã hiện thực — AU-02):
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/logout -H "Authorization: Bearer <TOKEN>"
+```
+`204` khi có token hợp lệ, `401 UNAUTHENTICATED` khi không có. Server không lưu phiên (JWT stateless): client tự xoá token.
 
 #### 3. Lấy thông tin tài khoản hiện tại:
 ```bash
