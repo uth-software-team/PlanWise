@@ -14,5 +14,7 @@ class SampleAuditable extends AuditableEntity {
 
 	SampleAuditable(String name) { this.name = name; }
 
+	String getName() { return name; }
+
 	void setName(String name) { this.name = name; }
 }
