@@ -43,6 +43,8 @@ class AuditableEntityTests {
 
 		assertThat(updated.getCreatedAt()).isEqualTo(createdAt);
 		assertThat(updated.getUpdatedAt()).isAfter(firstUpdatedAt);
+		// Reload by id to confirm the change was actually persisted.
+		assertThat(repository.findById(updated.getId()).orElseThrow().getName()).isEqualTo("after");
 	}
 
 }
