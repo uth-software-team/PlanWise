@@ -46,9 +46,9 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    /** Paths are relative to the context-path (/api). */
+    /** Paths are relative to the context-path (/api). Logout is NOT public: it needs the current user. */
     private static final String[] PUBLIC_ENDPOINTS = {
-            "/v1/auth/**",
+            "/v1/auth/register", "/v1/auth/login", "/v1/auth/password/**",
             "/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**"
     };
 
