@@ -18,9 +18,9 @@
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
 | GR-00 | Nháp V6, V7 (partial unique PENDING/ACCEPTED), V10 | P0 | 2 | ERD | trong `feature/contract-group-assignment-ai` | Khớp ERD | review TV1 | 11-18 |
-| GR-01 | Contract group/member/assignment/AI + interface | P0 | 5 | F-04 | `feature/contract-group-assignment-ai` | Stub 501; chữ ký `GroupAccessService`, `AssignmentQueryService` | build | 11-19 |
+| GR-01 | Contract group/member/assignment/AI + interface | P0 | 5 | F-04 | `feature/contract-group-assignment-ai` | Stub 501; chữ ký `GroupAccessApi`, `AssignmentApi` | build | 11-19 |
 | GR-02 | Group CRUD (creator = LEADER) | P0 | 6 | F-02 | `feature/group-crud` | Member xem; leader sửa | tests | 11-20 |
-| GR-03 | Members + `GroupAccessService` | P0 | 6 | GR-02 | `feature/group-members` | BR-06; UNIQUE(group, user) | permission | 11-21 |
+| GR-03 | Members + `GroupAccessApi` | P0 | 6 | GR-02 | `feature/group-members` | BR-06; UNIQUE(group, user) | permission | 11-21 |
 | AS-01 | Leader giao task + BR-04 ở service | P0 | 6 | GR-03, TK-04 | `feature/assignment-create` | `createGroupTask` (1 record); PENDING; trùng PENDING/ACCEPTED → 409 `ASSIGNMENT_ALREADY_ACTIVE` | tests | 11-22 |
 | AS-02 | Accept / decline / revoke + list + notify | P0 | 4 | AS-01 | `feature/assignment-respond` | BR-05; decline thiếu reason → 400; `acceptedTaskIds` | permission matrix | 11-23 |
 | AI-01 | `AiClient` + Gemini + Fake | P0 | 5 | GR-01 | `feature/ai-client` | Timeout 5s; key chỉ từ env; Fake khi thiếu key | `MockRestServiceServer` | 11-24 |
@@ -61,19 +61,19 @@ Khung review mỗi ngày: 11:00 và 16:00.
 - TV3: TK-04 `createGroupTask` (11-21) → AS-01; FE-TK-02 (11-27) → FE-AI.
 
 **Downstream (chờ tôi):**
-- TV2: `AssignmentQueryService.acceptedTaskIds` AS-02 (11-23) → SC-05b.
-- TV1: GR-03 `GroupAccessService` (11-21) → GR-04.
+- TV2: `AssignmentApi.acceptedTaskIds` AS-02 (11-23) → SC-05b.
+- TV1: GR-03 `GroupAccessApi` (11-21) → GR-04.
 - TV3: `GET /v1/assignments?status=ACCEPTED` (11-23) → FE-TK-02.
 
 ## API sở hữu / tiêu thụ
 
 | Sở hữu | Tiêu thụ |
 |---|---|
-| `GET/POST /v1/groups`, `GET/PUT /v1/groups/{id}` | `TaskQueryService.createGroupTask` (TV3) |
-| `POST /v1/groups/{id}/members`, `PATCH/DELETE /v1/groups/{id}/members/{userId}` | `UserQueryService` (TV1) — tìm user theo email |
-| `GET/POST /v1/assignments`, `POST /v1/assignments/{id}/accept`, `/decline`, `/revoke` | `NotificationService` (TV1, no-op) |
+| `GET/POST /v1/groups`, `GET/PUT /v1/groups/{id}` | `TaskApi.createGroupTask` (TV3) |
+| `POST /v1/groups/{id}/members`, `PATCH/DELETE /v1/groups/{id}/members/{userId}` | `UserApi` (TV1) — tìm user theo email |
+| `GET/POST /v1/assignments`, `POST /v1/assignments/{id}/accept`, `/decline`, `/revoke` | `NotificationApi` (TV1, no-op) |
 | `POST /v1/ai/tasks/parse` | `GET /v1/groups/{id}/availability` (TV1) — FE-AS-02 |
-| `GroupAccessService`, `AssignmentQueryService` | `POST /v1/tasks` (TV3) — FE-AI lưu draft |
+| `GroupAccessApi`, `AssignmentApi` | `POST /v1/tasks` (TV3) — FE-AI lưu draft |
 
 Không có `POST /groups/{id}/join` trong MVP (G8). Gemini: key chỉ ở `.env` (`GEMINI_API_KEY`), không commit, không gửi dữ liệu nhạy cảm.
 

@@ -18,10 +18,10 @@
 | ID | Task | P | h | Depends | Branch | Acceptance | Tests | Date |
 |---|---|---|---|---|---|---|---|---|
 | TK-00 | Nháp V3, V4, V5 | P0 | 2 | ERD | trong `feature/contract-task-availability` | Khớp ERD; CHECK ONCE/WEEKLY | review TV1 | 11-18 |
-| TK-01 | Contract Task/Availability/FixedEvent/Calendar + interface | P0 | 5 | F-01, F-04 | `feature/contract-task-availability` | Stub 501; chữ ký `TaskQueryService`, `AvailabilityQueryService`, `CalendarQueryService` | build | 11-19 |
+| TK-01 | Contract Task/Availability/FixedEvent/Calendar + interface | P0 | 5 | F-01, F-04 | `feature/contract-task-availability` | Stub 501; chữ ký `TaskApi`, `AvailabilityApi`, `CalendarApi` | build | 11-19 |
 | TK-02 | Task entity + CRUD | P0 | 7 | F-02, TK-01 | `feature/task-crud` | BR-01/02/03; owner-only; soft delete; `version` | WebMvc + service | 11-21 |
 | TK-03 | Status + filter + paging | P0 | 3 | TK-02 | `feature/task-status-filter` | `PageResponse` | tests | 11-21 |
-| TK-04 | `TaskQueryService` impl | P0 | 2 | TK-02 | (cùng TK-03) | HC-08; `createGroupTask` | unit | 11-21 |
+| TK-04 | `TaskApi` impl | P0 | 2 | TK-02 | (cùng TK-03) | HC-08; `createGroupTask` | unit | 11-21 |
 | AV-02 | AvailabilityRule CRUD | P0 | 4 | F-02 | `feature/availability-rules` | day 1–7; start < end | tests | 11-22 |
 | AV-04 | Expand availability theo tz (DST-safe) | P0 | 3 | AV-02 | (cùng AV-02) | half-open | unit ≥ 5 | 11-23 |
 | AV-03 | FixedEvent CRUD ONCE/WEEKLY + expand | P0 | 5 | AV-04 | `feature/fixed-events` | effectiveFrom/Until | tests | **11-24 11:00** |
@@ -60,7 +60,7 @@ Khung review mỗi ngày: 11:00 và 16:00.
 
 **Upstream (tôi chờ):**
 - TV1: F-01/F-04 (11-18) → TK-01; DB ready (11-19) → CRUD; FE-02/03 (11-23) → FE.
-- TV2: `ScheduleQueryService` impl SC-05a (11-23) → CAL-01.
+- TV2: `ScheduleApi` impl SC-05a (11-23) → CAL-01.
 - TV4: AS-02 (11-23) → tab "Được giao" trong FE-TK-02.
 
 **Downstream (chờ tôi):**
@@ -72,11 +72,11 @@ Khung review mỗi ngày: 11:00 và 16:00.
 
 | Sở hữu | Tiêu thụ |
 |---|---|
-| `GET/POST /v1/tasks`, `GET/PUT/DELETE /v1/tasks/{id}`, `PATCH /v1/tasks/{id}/status` | `ScheduleQueryService` (TV2) — cho CAL-01 |
+| `GET/POST /v1/tasks`, `GET/PUT/DELETE /v1/tasks/{id}`, `PATCH /v1/tasks/{id}/status` | `ScheduleApi` (TV2) — cho CAL-01 |
 | `GET/POST /v1/availability-rules`, `PUT/DELETE /v1/availability-rules/{id}` | `GET /v1/assignments?status=ACCEPTED` (TV4) — tab "Được giao" (CG-10) |
 | `GET/POST /v1/fixed-events`, `PUT/DELETE /v1/fixed-events/{id}` | `POST /v1/ai/tasks/parse` gián tiếp qua FE-AI (TV4 gọi `POST /v1/tasks`) |
 | `GET /v1/calendar?start&end` | |
-| `TaskQueryService`, `AvailabilityQueryService`, `CalendarQueryService` | |
+| `TaskApi`, `AvailabilityApi`, `CalendarApi` | |
 | P1: `GET /v1/dashboard/summary` | |
 
 ## PR tôi phải review (SLA ≤ 4h, khung 11:00 / 16:00)
