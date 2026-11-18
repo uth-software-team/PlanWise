@@ -290,10 +290,15 @@ Di chuyển vào thư mục backend:
 cd Code/backend
 ```
 
-- **Build dự án & chạy unit test**:
+- **Build dự án & chạy unit test** (H2, không cần Docker; bỏ qua test `@Tag("pg")`):
   ```bash
   ./gradlew build
   ```
+- **Chạy test trên PostgreSQL thật** (Testcontainers tự tạo container `postgres:16` tạm và xoá sau khi chạy, **không đụng DB dev**; cần Docker đang chạy):
+  ```bash
+  ./gradlew pgTest
+  ```
+  Kiểm tra: mọi migration Flyway chạy được và liên tục, entity khớp schema (`ddl-auto=validate`), các ràng buộc chỉ có trên PostgreSQL. CI chạy lệnh này trong job `pg`. Test mới cần PostgreSQL: kế thừa `support/PostgresContainerTest`.
 - **Chạy server phát triển (Dev Mode)**:
   ```bash
   ./gradlew bootRun

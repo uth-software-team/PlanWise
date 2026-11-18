@@ -9,7 +9,8 @@ Check `build.gradle` before adding dependencies. Never bump versions or swap wor
 
 ## Commands (run in `Code/backend/`; verify against build.gradle / README first)
 - Build: `./gradlew build`
-- Test: `./gradlew test` (single: `./gradlew test --tests "ClassName"`)
+- Test: `./gradlew test` (single: `./gradlew test --tests "ClassName"`) — H2 only, no Docker; excludes `@Tag("pg")`.
+- PostgreSQL tests: `./gradlew pgTest` (Testcontainers `postgres:16`, needs Docker; CI job `pg`).
 - Run: `./gradlew bootRun`
 - DB: `docker compose up -d` in `Code/backend/` (`compose.yaml`), or `./scripts/setup-dev.sh --docker` from repo root. Never `docker compose down -v` (deletes the DB volume) without approval.
 Never run migrations or data-changing commands without approval.
@@ -34,7 +35,7 @@ Never run migrations or data-changing commands without approval.
 - D7 AI provider: Google Gemini, as in the design doc (timeout 5 s, BR-12).
 - D8 No system-wide roles (actors: Guest, User). LEADER/MEMBER are per group, checked in services by `groupId`.
 - D9 Audit columns only where the ERD has them; no `created_by`/`updated_by`.
-- D10 Tests: H2 `create-drop`, Flyway disabled. Migrations are PostgreSQL-only; a Testcontainers migration test may be added later (needs approval).
+- D10 Tests: H2 `create-drop`, Flyway disabled. Migrations are PostgreSQL-only and are verified by Testcontainers `@Tag("pg")` tests (`./gradlew pgTest`, approved as G3, added by F-03).
 - D11 No refresh token in MVP (access JWT only).
 
 ## Architecture
@@ -99,8 +100,10 @@ Modular Monolith + Layered: Controller -> Service -> Repository -> PostgreSQL.
 - Verify authentication + authorization on sensitive endpoints.
 
 ## Testing
-- JUnit. Mockito / Spring Boot Test / Testcontainers only after checking existing deps and getting approval to add.
+- JUnit 5, Spring Boot Test, Mockito (from spring-boot-starter-test), Testcontainers PostgreSQL (`spring-boot-testcontainers`, `testcontainers-postgresql` 2.x, versions from the Boot BOM). Ask before adding other test libraries.
 - Every `@SpringBootTest` (and other Spring context tests) MUST use `@ActiveProfiles("test")`. The `test` profile (`src/test/resources/application-test.properties`) forces an isolated H2 DB (`jdbc:h2:mem:planwise_test`, `create-drop`), so tests never touch the developer's PostgreSQL even when `.env` exists. Never point tests at the dev DB.
+- PostgreSQL-only behavior (partial unique indexes, CHECK constraints, Flyway migrations, `ddl-auto=validate`): extend `support/PostgresContainerTest` (already `@Tag("pg")`, `@ActiveProfiles("test")`, throwaway `postgres:16` via `@ServiceConnection`, Flyway on, `validate`). Keep subclasses' configuration identical so the context is reused. Run with `./gradlew pgTest` (needs Docker); `./gradlew test`/`build` skip them.
+- Test-only entities (e.g. `SampleAuditable`) also need a test-only table for `pgTest`: add `src/test/resources/db/test-migration/V9xxx__*.sql` (versions ≥ 9000 are reserved for test-only migrations). Never put test tables in `src/main/resources/db/migration`.
 - Run `./gradlew clean build` if tests fail with stale-class errors (e.g. "Unable to find a @SpringBootConfiguration").
 - Cover: valid/invalid input, edge cases, invalid states, missing permission, not found, DB constraints, conflicts/concurrency, API responses, cross-module behavior.
 - Scheduling: overlap, deadline, availability, confirmed sessions, overload, concurrency.
