@@ -57,8 +57,19 @@ src/main/java/group16/webapp/
 │   ├── OpenApiConfig.java           # Cấu hình Swagger/OpenAPI v3 kèm Bearer Auth
 │   └── JpaAuditingConfig.java       # Bật JPA Auditing cho createdAt/updatedAt
 │
-└── modules/                         # [BUSINESS MODULES] Phân chia theo nghiệp vụ
+└── modules/                         # [BUSINESS MODULES] Phân chia theo nghiệp vụ (mỗi module có package-info.java ghi owner + bảng ERD)
+    ├── auth/                        # TV1 — users, password_reset_tokens
+    ├── task/                        # TV3 — tasks
+    ├── availability/                # TV3 — availability_rules, fixed_events, GET /v1/calendar
+    ├── schedule/                    # TV2 — schedule_proposals, schedule_sessions (engine/ là Java thuần)
+    ├── group/                       # TV4 — team_groups, group_members
+    ├── assignment/                  # TV4 — task_assignments
+    ├── ai/                          # TV4 — ai_request_logs (AiClient adapter)
+    ├── notification/                # TV1 — notifications (MVP: NoOpNotificationApi)
+    └── dashboard/                   # TV3 — tổng hợp read-only (P1)
 ```
+
+Owner và kế hoạch chi tiết: `docs/plan/` ở gốc repo.
 
 ---
 
@@ -208,8 +219,33 @@ Tên mã lỗi theo hợp đồng API trong tài liệu thiết kế:
 - `STALE_VERSION` (409): Sai version (optimistic locking) — client tải lại dữ liệu.
 - `DATA_CONFLICT` (409): Vi phạm ràng buộc DB (lưới an toàn; Service nên kiểm tra trước và ném mã cụ thể như `EMAIL_ALREADY_EXISTS`).
 - `INTERNAL_ERROR` (500): Lỗi ngoài dự kiến; không bao giờ trả stack trace hay chi tiết nội bộ.
+- `INVALID_TIME_RANGE` (400): Khoảng thời gian sai (start ≥ end, sai ngày giờ…). `NO_AVAILABILITY_RULE` (400): chưa thiết lập thời gian rảnh nên không lập lịch được.
+- `CONSTRAINT_VIOLATION` (409): Lịch vi phạm Hard Constraint; `data` = `{ "conflicts": [ { "sessionId", "code", "message" } ] }` (xem bên dưới).
+- `ASSIGNMENT_ALREADY_ACTIVE` (409): Task đã có assignment PENDING/ACCEPTED (BR-04; mã do nhóm bổ sung).
+- `AI_UNAVAILABLE` (503): Gemini lỗi / timeout / JSON sai — người dùng chuyển sang nhập tay.
+- `NOT_IMPLEMENTED` (501): **Chỉ dùng cho controller stub** trong contract PR; phải hết trước khi freeze backend.
 
-Mã riêng của module (`INVALID_TIME_RANGE`, `NO_AVAILABILITY_RULE`, `CONSTRAINT_VIOLATION`, `AI_UNAVAILABLE`, mã HC-xx…) được thêm cùng module sử dụng chúng.
+Mọi mã lỗi dùng cho MVP đã được khai báo sẵn trong `ErrorCode` — module **không cần sửa** file này. Cần mã mới thì mở PR riêng cho TV1 review.
+
+#### Lỗi theo từng phiên lịch (`ConflictCode`)
+Vi phạm trên một phiên cụ thể **không phải** `ErrorCode` mà là `ConflictCode` (`SESSION_OVERLAP`, `FIXED_EVENT_OVERLAP`, `OUTSIDE_AVAILABILITY`, `DEADLINE_EXCEEDED`, `PAST_TIME`, `DURATION_EXCEEDED`, `TASK_NOT_SCHEDULABLE`), trả trong `conflicts[]` của 409 `CONSTRAINT_VIOLATION`:
+
+```java
+throw AppException.conflicts(List.of(
+        new ConflictErrorDto(sessionId, ConflictCode.SESSION_OVERLAP, "Overlaps session 7")));
+```
+
+```json
+{
+  "success": false,
+  "code": "CONSTRAINT_VIOLATION",
+  "message": "The schedule violates one or more constraints",
+  "data": { "conflicts": [ { "sessionId": 11, "code": "SESSION_OVERLAP", "message": "Overlaps session 7" } ] },
+  "timestamp": "2026-11-25T03:00:00Z"
+}
+```
+
+Muốn trả `data` khác cho lỗi nghiệp vụ, dùng `new AppException(errorCode, message, data)` (không đưa chi tiết nội bộ vào `data`).
 
 ---
 
@@ -347,7 +383,8 @@ Khi phát triển một module nghiệp vụ (ví dụ: `notification` - thông 
    - `mapper/`: `NotificationMapper.java`.
    - `service/`: `NotificationService.java` và `impl/NotificationServiceImpl.java`.
    - `controller/`: `NotificationController.java` (`@RestController`, `@RequestMapping("/v1/notifications")`).
-   - `api/` *(Tùy chọn)*: `NotificationApi.java` để module khác (Assignment, Schedule) tạo thông báo.
+   - `api/` *(bắt buộc nếu module khác cần gọi)*: interface công khai đặt tên `<Name>Api` (ví dụ `NotificationApi.java` để Assignment, Schedule tạo thông báo). Đây là thứ **duy nhất** module khác được import, cùng các DTO/enum nằm trong `api/`.
+     Các `Api` dự kiến (CG-06): `UserApi` (auth), `TaskApi` (task), `AvailabilityApi`, `CalendarApi` (availability), `ScheduleApi` (schedule), `GroupAccessApi` (group), `AssignmentApi` (assignment), `NotificationApi` (notification — đã có, bản no-op).
 
 2. **Nếu module cần thông tin từ module khác**:
    - Tiêm interface `Api` tương ứng (Ví dụ: cần kiểm tra Task có tồn tại hay không thì tiêm `TaskApi`).
