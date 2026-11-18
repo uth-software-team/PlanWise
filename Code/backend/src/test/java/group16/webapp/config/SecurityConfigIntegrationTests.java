@@ -47,7 +47,7 @@ class SecurityConfigIntegrationTests {
 		mockMvc.perform(get(PROTECTED_PATH))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.success").value(false))
-				.andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"))
 				.andExpect(jsonPath("$.data").doesNotExist());
 	}
 
@@ -55,7 +55,7 @@ class SecurityConfigIntegrationTests {
 	void malformedTokenReturns401() throws Exception {
 		mockMvc.perform(get(PROTECTED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt"))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 	}
 
 	@Test
@@ -65,7 +65,7 @@ class SecurityConfigIntegrationTests {
 
 		mockMvc.perform(get(PROTECTED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
 	}
 
 	@Test

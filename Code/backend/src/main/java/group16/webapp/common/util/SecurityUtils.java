@@ -25,7 +25,7 @@ public final class SecurityUtils {
 
     /** Same as getCurrentUserId() but throws 401 when there is no logged-in user. */
     public static Long requireCurrentUserId() {
-        return getCurrentUserId().orElseThrow(() -> new AppException(ErrorCode.UNAUTHORIZED));
+        return getCurrentUserId().orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
     }
 
     public static Optional<String> getCurrentUserEmail() {

@@ -2,28 +2,29 @@ package group16.webapp.common.exception;
 
 import org.springframework.http.HttpStatus;
 
-/** Central catalogue of business/technical errors. Frontend can rely on the enum name. */
+/**
+ * Central catalogue of business/technical errors. Frontend can rely on the enum name.
+ * Names follow the design document's REST contract (INVALID_INPUT, UNAUTHENTICATED, STALE_VERSION, ...).
+ * Module-specific codes (INVALID_TIME_RANGE, NO_AVAILABILITY_RULE, CONSTRAINT_VIOLATION, AI_UNAVAILABLE, ...)
+ * are added together with the module that throws them.
+ */
 public enum ErrorCode {
     // ---- Generic ----
-    BAD_REQUEST(HttpStatus.BAD_REQUEST, "Bad request"),
-    VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "Validation failed"),
+    INVALID_INPUT(HttpStatus.BAD_REQUEST, "Invalid input"),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "Resource not found"),
+    METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "HTTP method not supported for this resource"),
+    UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported content type"),
+    STALE_VERSION(HttpStatus.CONFLICT, "Data was changed by another request. Please reload and try again"),
+    DATA_CONFLICT(HttpStatus.CONFLICT, "Request conflicts with existing data"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error"),
 
     // ---- Auth ----
-    UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Authentication required"),
+    UNAUTHENTICATED(HttpStatus.UNAUTHORIZED, "Authentication required"),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "Invalid email or password"),
     FORBIDDEN(HttpStatus.FORBIDDEN, "You do not have permission to perform this action"),
 
     // ---- User ----
-    USER_NOT_FOUND(HttpStatus.NOT_FOUND, "User not found"),
-    EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "Email already in use"),
-
-    // ---- Project ----
-    PROJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "Project not found"),
-
-    // ---- Task ----
-    TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Task not found");
+    EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "Email already in use");
 
     private final HttpStatus status;
     private final String message;

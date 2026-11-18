@@ -78,9 +78,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
-                        .authenticationEntryPoint((req, res, ex) -> writeError(res, ErrorCode.UNAUTHORIZED)))
+                        .authenticationEntryPoint((req, res, ex) -> writeError(res, ErrorCode.UNAUTHENTICATED)))
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint((req, res, e) -> writeError(res, ErrorCode.UNAUTHORIZED))
+                        .authenticationEntryPoint((req, res, e) -> writeError(res, ErrorCode.UNAUTHENTICATED))
                         .accessDeniedHandler((req, res, e) -> writeError(res, ErrorCode.FORBIDDEN)));
         return http.build();
     }
