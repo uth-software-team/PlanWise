@@ -88,6 +88,28 @@ class GlobalExceptionHandlerTests {
 	}
 
 	@Test
+	void constraintViolationReturns409WithConflicts() throws Exception {
+		expectError(mockMvc.perform(get(BASE + "/conflicts").with(jwt())), 409, "CONSTRAINT_VIOLATION")
+				.andExpect(jsonPath("$.data.conflicts.length()").value(2))
+				.andExpect(jsonPath("$.data.conflicts[0].sessionId").value(11))
+				.andExpect(jsonPath("$.data.conflicts[0].code").value("SESSION_OVERLAP"))
+				.andExpect(jsonPath("$.data.conflicts[0].message").value("Overlaps session 7"))
+				.andExpect(jsonPath("$.data.conflicts[1].code").value("DEADLINE_EXCEEDED"));
+	}
+
+	@Test
+	void notImplementedStubReturns501() throws Exception {
+		expectError(mockMvc.perform(get(BASE + "/not-implemented").with(jwt())), 501, "NOT_IMPLEMENTED")
+				.andExpect(jsonPath("$.data").doesNotExist());
+	}
+
+	@Test
+	void aiUnavailableReturns503WithoutData() throws Exception {
+		expectError(mockMvc.perform(get(BASE + "/ai").with(jwt())), 503, "AI_UNAVAILABLE")
+				.andExpect(jsonPath("$.data").doesNotExist());
+	}
+
+	@Test
 	void optimisticLockReturns409StaleVersion() throws Exception {
 		expectError(mockMvc.perform(get(BASE + "/stale").with(jwt())), 409, "STALE_VERSION");
 	}
