@@ -15,6 +15,10 @@ Do not move/rename top-level folders.
 **Never change code, repo structure, or config before the user approves a plan.**
 For every coding/bug/test/config task:
 1. Analyze read-only (structure, `git status`/branch, build files, related code, business rules).
+   - Inspect the affected source files, their direct callers or mappings, and relevant tests or configuration. Keep the inspection scoped to the task.
+   - Check task-related IDE Problems using read-only diagnostics available in the current session. For each distinct relevant error, capture the file, line, diagnostic source/code if available, and message. Read the referenced code and distinguish a confirmed cause from a hypothesis.
+   - If IDE diagnostics are unavailable, say so. When the user reports a specific error, ask for the exact Problems entry or a screenshot with the file and line visible. Continue any source inspection that does not depend on it.
+   - Base the plan on those findings. State the smallest proposed fix and how to verify it. After an approved fix, recheck the original diagnostic and report whether it cleared, persists, or could not be rechecked.
 2. Present plan: understanding, verified state, files to create/change, impact (DB/API/security/other modules), test plan, risks + rollback.
 3. Ask "Do you approve this plan?" and STOP. Partial approval = do only that part.
 4. Implement the minimal change in scope. Large out-of-plan change = ask again.
