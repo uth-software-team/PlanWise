@@ -35,6 +35,8 @@ import org.springframework.test.web.servlet.MockMvc;
 class SecurityConfigIntegrationTests {
 
 	private static final String PROTECTED_PATH = "/v1/tasks";
+	/** Protected (not public) but never mapped to a controller, so passing the filter ends in 404. */
+	private static final String UNMAPPED_PROTECTED_PATH = "/v1/security-probe-unmapped";
 	private static final String ALLOWED_ORIGIN = "http://localhost:5173";
 
 	@Autowired
@@ -74,8 +76,8 @@ class SecurityConfigIntegrationTests {
 		Instant now = Instant.now();
 		String token = token(now, now.plus(5, ChronoUnit.MINUTES));
 
-		// No controller is mapped yet, so an authenticated request reaches MVC and gets 404 (not 401).
-		mockMvc.perform(get(PROTECTED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+		// No controller is mapped there, so an authenticated request reaches MVC and gets 404 (not 401).
+		mockMvc.perform(get(UNMAPPED_PROTECTED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isNotFound())
 				.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 	}
