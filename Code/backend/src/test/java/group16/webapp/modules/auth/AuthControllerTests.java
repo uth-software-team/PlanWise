@@ -143,7 +143,8 @@ class AuthControllerTests {
 		String token = accessToken("anna@example.com", PASSWORD);
 
 		mockMvc.perform(post("/v1/auth/logout").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
-				.andExpect(status().isNoContent());
+				.andExpect(status().isNoContent())
+				.andExpect(content().string(""));
 		// Authenticated request to an unmapped path reaches MVC (404), i.e. it was not rejected with 401.
 		mockMvc.perform(get("/v1/not-mapped").header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
 				.andExpect(status().isNotFound());

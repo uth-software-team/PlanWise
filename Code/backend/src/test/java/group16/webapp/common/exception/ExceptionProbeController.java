@@ -1,6 +1,7 @@
 package group16.webapp.common.exception;
 
 import group16.webapp.common.dto.ConflictErrorDto;
+import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -16,7 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** Test-only endpoints (test classpath) that raise each exception type handled by GlobalExceptionHandler. */
+/**
+ * Test-only endpoints (test classpath) that raise each exception type handled by GlobalExceptionHandler.
+ * Hidden from OpenAPI so the test context's document matches the production contract (F-05 snapshot).
+ */
+@Hidden
 @RestController
 @RequestMapping("/v1/test-probe")
 class ExceptionProbeController {

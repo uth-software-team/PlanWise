@@ -40,10 +40,10 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-// Default tests run on H2 and need no Docker; PostgreSQL tests are excluded here.
+// Default tests run on H2 and need no Docker; PostgreSQL tests and the OpenAPI snapshot export are excluded here.
 tasks.named('test') {
 	useJUnitPlatform {
-		excludeTags 'pg'
+		excludeTags 'pg', 'openapi'
 	}
 }
 
@@ -57,4 +57,19 @@ tasks.register('pgTest', Test) {
 		includeTags 'pg'
 	}
 	shouldRunAfter tasks.named('test')
+}
+
+// F-05 contract snapshot (owner TV1): ./gradlew exportOpenApi. Not wired into build/check, so normal builds never
+// rewrite it. H2 test profile only; no Docker, database or .env needed.
+def openApiSnapshot = layout.projectDirectory.file('../../docs/api/openapi-v1.json')
+tasks.register('exportOpenApi', Test) {
+	description = 'Writes the OpenAPI contract snapshot to docs/api/openapi-v1.json.'
+	group = 'documentation'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'openapi'
+	}
+	systemProperty 'openapi.snapshot.path', openApiSnapshot.asFile.absolutePath
+	outputs.file(openApiSnapshot)
 }
