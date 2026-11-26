@@ -275,6 +275,22 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		assertThat(groupRepository.findById(foreign.getId()).orElseThrow().getGroupName()).isEqualTo("Foreign");
 	}
 
+	@Test
+	void leaderOfOneGroupButMemberOfTargetCannotUpdateTarget() throws Exception {
+		User caller = caller();
+		TeamGroup groupA = seedGroup(caller, "A");
+		TeamGroup groupB = seedGroup(newUser("leader@example.com"), "B");
+		addMember(groupB, caller, GroupRole.MEMBER);
+
+		assertForbiddenUpdateLeavesGroupUnchanged(groupB);
+
+		assertThat(groupRepository.findById(groupA.getId()).orElseThrow().getGroupName()).isEqualTo("A");
+		assertThat(memberRepository.findByGroupIdAndUserIdAndStatus(groupA.getId(), caller.getId(),
+				MembershipStatus.ACTIVE)).get().extracting(GroupMember::getRole).isEqualTo(GroupRole.LEADER);
+		assertThat(memberRepository.findByGroupIdAndUserIdAndStatus(groupB.getId(), caller.getId(),
+				MembershipStatus.ACTIVE)).get().extracting(GroupMember::getRole).isEqualTo(GroupRole.MEMBER);
+	}
+
 	private void assertForbiddenUpdateLeavesGroupUnchanged(TeamGroup group) throws Exception {
 		TeamGroup before = groupRepository.findById(group.getId()).orElseThrow();
 		clearInvocations(memberRepository);
