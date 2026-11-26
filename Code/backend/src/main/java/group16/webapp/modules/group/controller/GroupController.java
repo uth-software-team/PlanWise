@@ -3,6 +3,7 @@ package group16.webapp.modules.group.controller;
 import group16.webapp.common.dto.ApiResponse;
 import group16.webapp.common.exception.AppException;
 import group16.webapp.common.exception.ErrorCode;
+import group16.webapp.common.util.SecurityUtils;
 import group16.webapp.modules.group.dto.GroupAvailabilityResponse;
 import group16.webapp.modules.group.dto.GroupRequest;
 import group16.webapp.modules.group.dto.GroupResponse;
@@ -10,6 +11,7 @@ import group16.webapp.modules.group.dto.GroupSummaryResponse;
 import group16.webapp.modules.group.dto.MemberAddRequest;
 import group16.webapp.modules.group.dto.MemberResponse;
 import group16.webapp.modules.group.dto.RoleUpdateRequest;
+import group16.webapp.modules.group.service.GroupService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -28,38 +30,44 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * UC-09 groups and members, plus the CG-11 availability endpoint. Contract stubs (GR-01): every method answers
- * 501 NOT_IMPLEMENTED until GR-02 (groups), GR-03 (members) and GR-04 (availability) implement them.
- * Planned errors: 404 missing group, 403 insufficient membership or role, 409 DATA_CONFLICT when the last
- * leader tries to leave.
+ * UC-09 groups and members, plus the CG-11 availability endpoint. Group CRUD is implemented (GR-02); the member
+ * endpoints (GR-03) and availability (GR-04) are still contract stubs that answer 501 NOT_IMPLEMENTED.
+ * Errors: 404 missing group, 403 insufficient membership or role, 409 DATA_CONFLICT when the last
+ * leader tries to leave (GR-03).
  */
 @RestController
 @RequestMapping("/v1/groups")
 public class GroupController {
 
+    private final GroupService groupService;
+
+    public GroupController(GroupService groupService) {
+        this.groupService = groupService;
+    }
+
     /** Groups the caller is an ACTIVE member of. */
     @GetMapping
     public ApiResponse<List<GroupSummaryResponse>> listMyGroups() {
-        throw notImplemented();
+        return ApiResponse.ok(groupService.listMyGroups(SecurityUtils.requireCurrentUserId()));
     }
 
     /** Any user; the creator becomes an ACTIVE LEADER. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<GroupResponse> createGroup(@Valid @RequestBody GroupRequest request) {
-        throw notImplemented();
+        return ApiResponse.ok(groupService.createGroup(SecurityUtils.requireCurrentUserId(), request));
     }
 
     /** ACTIVE members only. */
     @GetMapping("/{id}")
     public ApiResponse<GroupResponse> getGroup(@PathVariable Long id) {
-        throw notImplemented();
+        return ApiResponse.ok(groupService.getGroup(SecurityUtils.requireCurrentUserId(), id));
     }
 
     /** ACTIVE LEADER only. */
     @PutMapping("/{id}")
     public ApiResponse<GroupResponse> updateGroup(@PathVariable Long id, @Valid @RequestBody GroupRequest request) {
-        throw notImplemented();
+        return ApiResponse.ok(groupService.updateGroup(SecurityUtils.requireCurrentUserId(), id, request));
     }
 
     /** ACTIVE LEADER only; adds (or reactivates) the user as MEMBER. */

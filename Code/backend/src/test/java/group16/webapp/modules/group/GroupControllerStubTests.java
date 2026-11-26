@@ -14,17 +14,26 @@ import org.springframework.http.HttpMethod;
 
 import java.util.stream.Stream;
 
-/** GR-01 contract: group/member/availability stubs answer 501 and are documented in OpenAPI. */
+/**
+ * GR-01 contract: the member (GR-03) and availability (GR-04) stubs answer 501, every group endpoint needs a token,
+ * and all of them are documented in OpenAPI. Group CRUD behavior (GR-02) is covered by GroupControllerTests.
+ */
 class GroupControllerStubTests extends AuthenticatedMvcTest {
 
 	private static final String GROUP = "{\"groupName\":\"Team A\",\"description\":\"Course project\"}";
 
-	static Stream<Arguments> endpoints() {
+	/** Group CRUD endpoints implemented in GR-02 (no longer 501). */
+	static Stream<Arguments> crudEndpoints() {
 		return Stream.of(
 				Arguments.of(HttpMethod.GET, "/v1/groups", null),
 				Arguments.of(HttpMethod.POST, "/v1/groups", GROUP),
 				Arguments.of(HttpMethod.GET, "/v1/groups/1", null),
-				Arguments.of(HttpMethod.PUT, "/v1/groups/1", GROUP),
+				Arguments.of(HttpMethod.PUT, "/v1/groups/1", GROUP));
+	}
+
+	/** Endpoints still stubbed until GR-03 / GR-04. */
+	static Stream<Arguments> stubEndpoints() {
+		return Stream.of(
 				Arguments.of(HttpMethod.POST, "/v1/groups/1/members", "{\"email\":\"member@example.com\"}"),
 				Arguments.of(HttpMethod.PATCH, "/v1/groups/1/members/2", "{\"role\":\"LEADER\"}"),
 				Arguments.of(HttpMethod.DELETE, "/v1/groups/1/members/2", null),
@@ -32,8 +41,12 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 						"/v1/groups/1/availability?start=2026-11-23T00:00:00Z&end=2026-11-30T00:00:00Z", null));
 	}
 
+	static Stream<Arguments> allEndpoints() {
+		return Stream.concat(crudEndpoints(), stubEndpoints());
+	}
+
 	@ParameterizedTest(name = "{0} {1}")
-	@MethodSource("endpoints")
+	@MethodSource("stubEndpoints")
 	void authenticatedValidCallReturns501(HttpMethod method, String uri, String body) throws Exception {
 		callAuthenticated(method, uri, body)
 				.andExpect(status().isNotImplemented())
@@ -42,7 +55,7 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 	}
 
 	@ParameterizedTest(name = "{0} {1}")
-	@MethodSource("endpoints")
+	@MethodSource("allEndpoints")
 	void anonymousCallReturns401(HttpMethod method, String uri, String body) throws Exception {
 		callAnonymous(method, uri, body)
 				.andExpect(status().isUnauthorized())
