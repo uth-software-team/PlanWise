@@ -1,0 +1,12 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+
+# Local env (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
