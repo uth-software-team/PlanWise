@@ -4,12 +4,15 @@ import group16.webapp.common.exception.AppException;
 import group16.webapp.common.exception.ErrorCode;
 import group16.webapp.modules.auth.api.UserApi;
 import group16.webapp.modules.auth.api.UserSummary;
+import group16.webapp.modules.group.api.GroupAccessApi;
 import group16.webapp.modules.group.api.GroupRole;
 import group16.webapp.modules.group.api.MembershipStatus;
 import group16.webapp.modules.group.dto.GroupRequest;
 import group16.webapp.modules.group.dto.GroupResponse;
 import group16.webapp.modules.group.dto.GroupSummaryResponse;
+import group16.webapp.modules.group.dto.MemberAddRequest;
 import group16.webapp.modules.group.dto.MemberResponse;
+import group16.webapp.modules.group.dto.RoleUpdateRequest;
 import group16.webapp.modules.group.entity.GroupMember;
 import group16.webapp.modules.group.entity.TeamGroup;
 import group16.webapp.modules.group.repository.GroupMemberRepository;
@@ -19,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +30,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
-public class GroupServiceImpl implements GroupService {
+public class GroupServiceImpl implements GroupService, GroupAccessApi {
 
     private final TeamGroupRepository groupRepository;
     private final GroupMemberRepository memberRepository;
@@ -75,12 +79,149 @@ public class GroupServiceImpl implements GroupService {
     @Transactional
     public GroupResponse updateGroup(Long callerId, Long groupId, GroupRequest request) {
         requireActiveCaller(callerId);
-        TeamGroup group = requireGroup(groupId);
-        if (requireActiveMembership(groupId, callerId).getRole() != GroupRole.LEADER) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
+        // Lock first, so a concurrent demotion or removal of the caller is committed before the role is checked.
+        TeamGroup group = lockGroup(groupId);
+        requireActiveLeader(groupId, callerId);
         group.update(request.groupName().trim(), normalizeDescription(request.description()));
         return toResponse(groupRepository.saveAndFlush(group));
+    }
+
+    // ---------- GR-03 membership mutations (serialized per group by the TeamGroup row lock) ----------
+
+    @Override
+    @Transactional
+    public MemberResponse addMember(Long callerId, Long groupId, MemberAddRequest request) {
+        requireActiveCaller(callerId);
+        lockGroup(groupId);
+        requireActiveLeader(groupId, callerId);
+        UserSummary target = userApi.findByEmail(request.email())
+                .filter(UserSummary::active)
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
+        Instant now = now();
+        GroupMember member = memberRepository.findByGroupIdAndUserId(groupId, target.id()).orElse(null);
+        if (member == null) {
+            member = new GroupMember(groupId, target.id(), GroupRole.MEMBER, now);
+        } else if (member.getStatus() == MembershipStatus.ACTIVE) {
+            throw new AppException(ErrorCode.DATA_CONFLICT);
+        } else {
+            member.reactivate(now);
+        }
+        return toMemberResponse(memberRepository.saveAndFlush(member), target);
+    }
+
+    @Override
+    @Transactional
+    public MemberResponse changeMemberRole(Long callerId, Long groupId, Long userId, RoleUpdateRequest request) {
+        requireActiveCaller(callerId);
+        TeamGroup group = lockGroup(groupId);
+        requireActiveLeader(groupId, callerId);
+        GroupMember target = findActiveMember(groupId, userId);
+        GroupRole newRole = request.role();
+        if (target.getRole() != newRole) {
+            if (newRole == GroupRole.MEMBER) {
+                // Demoting a LEADER: demoting a peer is creator-only; self-demotion needs another leader.
+                if (!userId.equals(callerId)) {
+                    requireCreator(group, callerId);
+                }
+                requireAnotherActiveLeader(groupId);
+            }
+            target.changeRole(newRole);
+            memberRepository.saveAndFlush(target);
+        }
+        return toMemberResponse(target, userApi.findById(userId).orElse(null));
+    }
+
+    @Override
+    @Transactional
+    public void removeMember(Long callerId, Long groupId, Long userId) {
+        requireActiveCaller(callerId);
+        TeamGroup group = lockGroup(groupId);
+        GroupMember target;
+        if (userId.equals(callerId)) {
+            target = requireActiveMembership(groupId, callerId);
+        } else {
+            requireActiveLeader(groupId, callerId);
+            target = findActiveMember(groupId, userId);
+            if (target.getRole() == GroupRole.LEADER) {
+                requireCreator(group, callerId);
+            }
+        }
+        if (target.getRole() == GroupRole.LEADER) {
+            requireAnotherActiveLeader(groupId);
+        }
+        target.deactivate(now());
+        memberRepository.saveAndFlush(target);
+    }
+
+    // ---------- GroupAccessApi ----------
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requireMember(Long groupId, Long userId) {
+        requireGroup(groupId);
+        requireActiveMembership(groupId, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requireLeader(Long groupId, Long userId) {
+        requireGroup(groupId);
+        requireActiveLeader(groupId, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isActiveMember(Long groupId, Long userId) {
+        return groupRepository.existsById(groupId)
+                && memberRepository.findByGroupIdAndUserIdAndStatus(groupId, userId, MembershipStatus.ACTIVE)
+                        .isPresent();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Long> memberIds(Long groupId) {
+        if (!groupRepository.existsById(groupId)) {
+            return List.of();
+        }
+        return memberRepository.findByGroupIdAndStatusOrderByJoinedAtAscIdAsc(groupId, MembershipStatus.ACTIVE)
+                .stream().map(GroupMember::getUserId).toList();
+    }
+
+    /** SELECT ... FOR UPDATE on the group; must run before any membership of the group is read. */
+    private TeamGroup lockGroup(Long groupId) {
+        return groupRepository.findByIdForUpdate(groupId)
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    private GroupMember requireActiveLeader(Long groupId, Long userId) {
+        GroupMember member = requireActiveMembership(groupId, userId);
+        if (member.getRole() != GroupRole.LEADER) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        return member;
+    }
+
+    private GroupMember findActiveMember(Long groupId, Long userId) {
+        return memberRepository.findByGroupIdAndUserIdAndStatus(groupId, userId, MembershipStatus.ACTIVE)
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
+    }
+
+    /** Creator-only authority = ACTIVE LEADER (checked by the caller) and the group's creator. */
+    private static void requireCreator(TeamGroup group, Long callerId) {
+        if (!group.getCreatedByUserId().equals(callerId)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+    }
+
+    /** Called when an ACTIVE LEADER is about to stop being one: at least 2 ACTIVE LEADERs must exist now. */
+    private void requireAnotherActiveLeader(Long groupId) {
+        if (memberRepository.countByGroupIdAndRoleAndStatus(groupId, GroupRole.LEADER, MembershipStatus.ACTIVE) < 2) {
+            throw new AppException(ErrorCode.DATA_CONFLICT);
+        }
+    }
+
+    private static Instant now() {
+        return Instant.now().truncatedTo(ChronoUnit.MILLIS);
     }
 
     /** A token stays valid for 24h, so a deleted or deactivated account must be rejected here. */
