@@ -1,18 +1,23 @@
 package group16.webapp.modules.group;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import group16.webapp.common.exception.AppException;
+import group16.webapp.common.exception.ErrorCode;
 import group16.webapp.modules.auth.entity.User;
 import group16.webapp.modules.auth.repository.UserRepository;
 import group16.webapp.modules.auth.service.JwtService;
+import group16.webapp.modules.group.api.GroupAccessApi;
 import group16.webapp.modules.group.api.GroupRole;
 import group16.webapp.modules.group.api.MembershipStatus;
 import group16.webapp.modules.group.entity.GroupMember;
@@ -60,6 +65,9 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 
 	@Autowired
 	private JdbcTemplate jdbc;
+
+	@Autowired
+	private GroupAccessApi accessApi;
 
 	private final List<Long> extraUserIds = new ArrayList<>();
 
@@ -307,7 +315,437 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		verify(memberRepository, never()).findByGroupIdAndStatusOrderByJoinedAtAscIdAsc(any(), any());
 	}
 
+	// ---------- POST /v1/groups/{id}/members ----------
+
+	@Test
+	void leaderAddsExistingUserAsActiveMember() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User target = newUser("target@example.com");
+
+		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("target@example.com"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.success").value(true))
+				.andExpect(jsonPath("$.data.userId").value(target.getId()))
+				.andExpect(jsonPath("$.data.email").value("target@example.com"))
+				.andExpect(jsonPath("$.data.role").value("MEMBER"))
+				.andExpect(jsonPath("$.data.status").value("ACTIVE"))
+				.andExpect(jsonPath("$.data.joinedAt").isNotEmpty());
+
+		GroupMember row = row(group, target);
+		assertThat(row.getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row.getLeftAt()).isNull();
+	}
+
+	@Test
+	void addingMissingEmailReturns404() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+
+		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("nobody@example.com"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+	}
+
+	@Test
+	void addingInactiveAccountReturns404AndCreatesNoRow() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User target = newUser("inactive@example.com");
+		target.deactivate();
+		userRepository.save(target);
+
+		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("inactive@example.com"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+		assertThat(memberRepository.findByGroupIdAndUserId(group.getId(), target.getId())).isEmpty();
+	}
+
+	@Test
+	void addingToMissingGroupReturns404() throws Exception {
+		callAuthenticated(HttpMethod.POST, "/v1/groups/999999/members", addBody("x@example.com"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+	}
+
+	@Test
+	void nonLeadersCannotAddEvenForUnknownEmail() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(newUser("leader@example.com"), "Team");
+		TeamGroup inactiveGroup = seedGroup(newUser("leader2@example.com"), "Team2");
+		deactivate(addMember(inactiveGroup, caller, GroupRole.LEADER));
+		TeamGroup foreign = seedGroup(newUser("leader3@example.com"), "Foreign");
+		seedGroup(caller, "Mine");
+		addMember(group, caller, GroupRole.MEMBER);
+
+		// 403 comes before the target lookup, so an unknown email does not leak as 404.
+		for (TeamGroup g : List.of(group, inactiveGroup, foreign)) {
+			callAuthenticated(HttpMethod.POST, membersUri(g), addBody("nobody@example.com"))
+					.andExpect(status().isForbidden())
+					.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		}
+	}
+
+	@Test
+	void addingActiveMemberReturns409AndKeepsRoleAndTimestamps() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User target = newUser("other-leader@example.com");
+		addMember(group, target, GroupRole.LEADER);
+		GroupSnapshot before = snapshot(row(group, target));
+
+		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("other-leader@example.com"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+
+		assertThat(snapshot(row(group, target))).isEqualTo(before);
+	}
+
+	@Test
+	void addingInactiveMemberReactivatesSameRowAsMember() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User target = newUser("former@example.com");
+		Instant oldJoin = Instant.now().minus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MILLIS);
+		GroupMember seeded = memberRepository.save(new GroupMember(group.getId(), target.getId(), GroupRole.LEADER, oldJoin));
+		deactivate(seeded);
+
+		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("FORMER@example.com"))
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.data.userId").value(target.getId()))
+				.andExpect(jsonPath("$.data.role").value("MEMBER"))
+				.andExpect(jsonPath("$.data.status").value("ACTIVE"));
+
+		GroupMember row = row(group, target);
+		assertThat(row.getId()).isEqualTo(seeded.getId());
+		assertThat(row.getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row.getLeftAt()).isNull();
+		assertThat(row.getJoinedAt()).isAfter(oldJoin);
+		assertThat(memberRepository.findAll().stream().filter(m -> m.getUserId().equals(target.getId()))).hasSize(1);
+	}
+
+	// ---------- PATCH /v1/groups/{id}/members/{userId} ----------
+
+	@Test
+	void leaderPromotesMemberAndSameRoleRequestIsNoOp() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User target = newUser("target@example.com");
+		addMember(group, target, GroupRole.MEMBER);
+
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, target), roleBody("LEADER"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.userId").value(target.getId()))
+				.andExpect(jsonPath("$.data.role").value("LEADER"));
+		assertThat(row(group, target).getRole()).isEqualTo(GroupRole.LEADER);
+
+		GroupSnapshot before = snapshot(row(group, target));
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, target), roleBody("LEADER"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.role").value("LEADER"));
+		assertThat(snapshot(row(group, target))).isEqualTo(before);
+	}
+
+	@Test
+	void ordinaryLeaderCanPromoteButNotDemotePeers() throws Exception {
+		User creator = newUser("creator@example.com");
+		User ordinary = caller();
+		TeamGroup group = seedGroup(creator, "Team");
+		addMember(group, ordinary, GroupRole.LEADER);
+		User member = newUser("member@example.com");
+		addMember(group, member, GroupRole.MEMBER);
+
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("LEADER")).andExpect(status().isOk());
+
+		GroupSnapshot creatorBefore = snapshot(row(group, creator));
+		GroupSnapshot peerBefore = snapshot(row(group, member));
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, creator), roleBody("MEMBER"))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("MEMBER"))
+				.andExpect(status().isForbidden());
+		assertThat(snapshot(row(group, creator))).isEqualTo(creatorBefore);
+		assertThat(snapshot(row(group, member))).isEqualTo(peerBefore);
+	}
+
+	@Test
+	void creatorDemotesAnotherLeader() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User other = newUser("other@example.com");
+		addMember(group, other, GroupRole.LEADER);
+
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, other), roleBody("MEMBER"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.role").value("MEMBER"));
+
+		assertThat(row(group, other).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row(group, other).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+	}
+
+	@Test
+	void creatorSelfDemotionKeepsCreatedByAndRemainingLeaderGetsNoCreatorAuthority() throws Exception {
+		User creator = caller();
+		TeamGroup group = seedGroup(creator, "Team");
+		User leader2 = newUser("leader2@example.com");
+		User leader3 = newUser("leader3@example.com");
+		addMember(group, leader2, GroupRole.LEADER);
+		addMember(group, leader3, GroupRole.LEADER);
+
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, creator), roleBody("MEMBER"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.role").value("MEMBER"));
+
+		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
+				.isEqualTo(creator.getId());
+		// Remaining leaders still manage members, but cannot demote or remove each other.
+		GroupSnapshot before = snapshot(row(group, leader3));
+		callAs(leader2, HttpMethod.PATCH, memberUri(group, leader3), roleBody("MEMBER"))
+				.andExpect(status().isForbidden());
+		callAs(leader2, HttpMethod.DELETE, memberUri(group, leader3), null).andExpect(status().isForbidden());
+		assertThat(snapshot(row(group, leader3))).isEqualTo(before);
+		callAs(leader2, HttpMethod.PATCH, memberUri(group, creator), roleBody("LEADER")).andExpect(status().isOk());
+		// The creator demoted themselves and was promoted again: the authority is theirs once more (both conditions).
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, leader3), roleBody("MEMBER")).andExpect(status().isOk());
+	}
+
+	@Test
+	void lastLeaderSelfDemotionReturns409AndKeepsRole() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User member = newUser("member@example.com");
+		addMember(group, member, GroupRole.MEMBER);
+		GroupSnapshot before = snapshot(row(group, caller()));
+
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, caller()), roleBody("MEMBER"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+
+		assertThat(snapshot(row(group, caller()))).isEqualTo(before);
+	}
+
+	@Test
+	void roleChangeTargetsAndCallersAreChecked() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(caller, "Team");
+		User inactive = newUser("inactive@example.com");
+		deactivate(addMember(group, inactive, GroupRole.MEMBER));
+		User stranger = newUser("stranger@example.com");
+
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, inactive), roleBody("LEADER"))
+				.andExpect(status().isNotFound());
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, stranger), roleBody("LEADER"))
+				.andExpect(status().isNotFound());
+		callAuthenticated(HttpMethod.PATCH, "/v1/groups/999999/members/" + stranger.getId(), roleBody("LEADER"))
+				.andExpect(status().isNotFound());
+		assertThat(row(group, inactive).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+
+		// A MEMBER of the group, and a LEADER of another group only, are forbidden.
+		User member = newUser("member@example.com");
+		addMember(group, member, GroupRole.MEMBER);
+		callAs(member, HttpMethod.PATCH, memberUri(group, member), roleBody("LEADER")).andExpect(status().isForbidden());
+		TeamGroup other = seedGroup(newUser("leader@example.com"), "Other");
+		User otherMember = newUser("om@example.com");
+		addMember(other, otherMember, GroupRole.MEMBER);
+		callAuthenticated(HttpMethod.PATCH, memberUri(other, otherMember), roleBody("LEADER"))
+				.andExpect(status().isForbidden());
+		assertThat(row(other, otherMember).getRole()).isEqualTo(GroupRole.MEMBER);
+	}
+
+	// ---------- DELETE /v1/groups/{id}/members/{userId} ----------
+
+	@Test
+	void leaderRemovesMemberKeepingRowAndMarkingItInactive() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		User target = newUser("target@example.com");
+		GroupMember seeded = addMember(group, target, GroupRole.MEMBER);
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, target), null)
+				.andExpect(status().isNoContent())
+				.andExpect(content().string(""));
+
+		GroupMember row = row(group, target);
+		assertThat(row.getId()).isEqualTo(seeded.getId());
+		assertThat(row.getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row.getLeftAt()).isNotNull();
+		assertThat(row.getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row.getJoinedAt()).isEqualTo(seeded.getJoinedAt());
+		assertThat(row.getGroupId()).isEqualTo(group.getId());
+	}
+
+	@Test
+	void memberSelfLeavesAndRepeatedLeaveIsForbidden() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(newUser("leader@example.com"), "Team");
+		addMember(group, caller, GroupRole.MEMBER);
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, caller), null)
+				.andExpect(status().isNoContent())
+				.andExpect(content().string(""));
+		assertThat(row(group, caller).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, caller).getLeftAt()).isNotNull();
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, caller), null)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+	}
+
+	@Test
+	void removalTargetsAndCallersAreChecked() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(caller, "Team");
+		User inactive = newUser("inactive@example.com");
+		deactivate(addMember(group, inactive, GroupRole.MEMBER));
+		User stranger = newUser("stranger@example.com");
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, inactive), null).andExpect(status().isNotFound());
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, stranger), null).andExpect(status().isNotFound());
+		callAuthenticated(HttpMethod.DELETE, "/v1/groups/999999/members/" + stranger.getId(), null)
+				.andExpect(status().isNotFound());
+
+		// MEMBER removing someone else, and a LEADER of another group removing in this group: 403.
+		User member = newUser("member@example.com");
+		User victim = newUser("victim@example.com");
+		addMember(group, member, GroupRole.MEMBER);
+		addMember(group, victim, GroupRole.MEMBER);
+		callAs(member, HttpMethod.DELETE, memberUri(group, victim), null).andExpect(status().isForbidden());
+		TeamGroup foreign = seedGroup(newUser("leader@example.com"), "Foreign");
+		User foreignMember = newUser("fm@example.com");
+		addMember(foreign, foreignMember, GroupRole.MEMBER);
+		callAuthenticated(HttpMethod.DELETE, memberUri(foreign, foreignMember), null)
+				.andExpect(status().isForbidden());
+		assertThat(row(group, victim).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(foreign, foreignMember).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+	}
+
+	@Test
+	void creatorRemovesAnotherLeaderButOrdinaryLeaderCannotRemoveCreatorOrPeer() throws Exception {
+		User creator = newUser("creator@example.com");
+		User ordinary = caller();
+		TeamGroup group = seedGroup(creator, "Team");
+		addMember(group, ordinary, GroupRole.LEADER);
+		User peer = newUser("peer@example.com");
+		addMember(group, peer, GroupRole.LEADER);
+		GroupSnapshot creatorBefore = snapshot(row(group, creator));
+		GroupSnapshot peerBefore = snapshot(row(group, peer));
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, creator), null)
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, peer), null).andExpect(status().isForbidden());
+		assertThat(snapshot(row(group, creator))).isEqualTo(creatorBefore);
+		assertThat(snapshot(row(group, peer))).isEqualTo(peerBefore);
+
+		callAs(creator, HttpMethod.DELETE, memberUri(group, peer), null).andExpect(status().isNoContent());
+		assertThat(row(group, peer).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, peer).getRole()).isEqualTo(GroupRole.LEADER);
+	}
+
+	@Test
+	void creatorSelfLeaveKeepsCreatedByAndRemainingLeaderGetsNoCreatorAuthority() throws Exception {
+		User creator = caller();
+		TeamGroup group = seedGroup(creator, "Team");
+		User leader2 = newUser("leader2@example.com");
+		User leader3 = newUser("leader3@example.com");
+		User member = newUser("member@example.com");
+		addMember(group, leader2, GroupRole.LEADER);
+		addMember(group, leader3, GroupRole.LEADER);
+		addMember(group, member, GroupRole.MEMBER);
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, creator), null).andExpect(status().isNoContent());
+
+		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
+				.isEqualTo(creator.getId());
+		callAs(leader2, HttpMethod.DELETE, memberUri(group, member), null).andExpect(status().isNoContent());
+		GroupSnapshot before = snapshot(row(group, leader3));
+		callAs(leader2, HttpMethod.DELETE, memberUri(group, leader3), null).andExpect(status().isForbidden());
+		assertThat(snapshot(row(group, leader3))).isEqualTo(before);
+	}
+
+	@Test
+	void lastLeaderSelfLeaveReturns409AndKeepsMembership() throws Exception {
+		TeamGroup group = seedGroup(caller(), "Team");
+		addMember(group, newUser("member@example.com"), GroupRole.MEMBER);
+		GroupSnapshot before = snapshot(row(group, caller()));
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, caller()), null)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+
+		assertThat(snapshot(row(group, caller()))).isEqualTo(before);
+	}
+
+	// ---------- GroupAccessApi ----------
+
+	@Test
+	void groupAccessApiDistinguishesActiveInactiveAndMissing() {
+		User leader = newUser("leader@example.com");
+		User member = newUser("member@example.com");
+		User former = newUser("former@example.com");
+		User stranger = newUser("stranger@example.com");
+		TeamGroup group = seedGroup(leader, "Team");
+		TeamGroup otherGroup = seedGroup(stranger, "Other");
+		addMember(group, member, GroupRole.MEMBER);
+		deactivate(addMember(group, former, GroupRole.LEADER));
+		Long missing = 999999L;
+
+		accessApi.requireMember(group.getId(), leader.getId());
+		accessApi.requireMember(group.getId(), member.getId());
+		accessApi.requireLeader(group.getId(), leader.getId());
+		assertForbidden(() -> accessApi.requireLeader(group.getId(), member.getId()));
+		assertForbidden(() -> accessApi.requireMember(group.getId(), former.getId()));
+		assertForbidden(() -> accessApi.requireLeader(group.getId(), former.getId()));
+		assertForbidden(() -> accessApi.requireMember(group.getId(), stranger.getId()));
+		// Lookups are scoped to the requested group: a leader elsewhere is nobody here.
+		assertForbidden(() -> accessApi.requireLeader(group.getId(), stranger.getId()));
+		assertThatThrownBy(() -> accessApi.requireMember(missing, leader.getId()))
+				.isInstanceOfSatisfying(AppException.class,
+						e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
+		assertThatThrownBy(() -> accessApi.requireLeader(missing, leader.getId()))
+				.isInstanceOfSatisfying(AppException.class,
+						e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.RESOURCE_NOT_FOUND));
+
+		assertThat(accessApi.isActiveMember(group.getId(), leader.getId())).isTrue();
+		assertThat(accessApi.isActiveMember(group.getId(), member.getId())).isTrue();
+		assertThat(accessApi.isActiveMember(group.getId(), former.getId())).isFalse();
+		assertThat(accessApi.isActiveMember(group.getId(), stranger.getId())).isFalse();
+		assertThat(accessApi.isActiveMember(missing, leader.getId())).isFalse();
+
+		assertThat(accessApi.memberIds(group.getId())).containsExactlyInAnyOrder(leader.getId(), member.getId());
+		assertThat(accessApi.memberIds(otherGroup.getId())).containsExactly(stranger.getId());
+		assertThat(accessApi.memberIds(missing)).isEmpty();
+	}
+
+	private static void assertForbidden(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+		assertThatThrownBy(call).isInstanceOfSatisfying(AppException.class,
+				e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+	}
+
 	// ---------- fixtures ----------
+
+	private static String membersUri(TeamGroup group) {
+		return "/v1/groups/" + group.getId() + "/members";
+	}
+
+	private static String memberUri(TeamGroup group, User user) {
+		return membersUri(group) + "/" + user.getId();
+	}
+
+	private static String addBody(String email) {
+		return "{\"email\":\"" + email + "\"}";
+	}
+
+	private static String roleBody(String role) {
+		return "{\"role\":\"" + role + "\"}";
+	}
+
+	private GroupMember row(TeamGroup group, User user) {
+		return memberRepository.findByGroupIdAndUserId(group.getId(), user.getId()).orElseThrow();
+	}
+
+	private record GroupSnapshot(Long id, GroupRole role, MembershipStatus status, Instant joinedAt, Instant leftAt) {}
+
+	private static GroupSnapshot snapshot(GroupMember m) {
+		return new GroupSnapshot(m.getId(), m.getRole(), m.getStatus(), m.getJoinedAt(), m.getLeftAt());
+	}
 
 	/** The caller created by AuthenticatedMvcTest (looked up, so nothing depends on setup order). */
 	private User caller() {
@@ -331,7 +769,7 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 				Instant.now().truncatedTo(ChronoUnit.MILLIS)));
 	}
 
-	/** GR-03 owns leaving; tests set the INACTIVE state directly (left_at is required for INACTIVE in V7). */
+	/** Seeds the INACTIVE state directly (left_at is required for INACTIVE in V7). */
 	private void deactivate(GroupMember member) {
 		jdbc.update("UPDATE group_members SET status = 'INACTIVE', left_at = ? WHERE id = ?",
 				java.sql.Timestamp.from(member.getJoinedAt().plusSeconds(1)), member.getId());

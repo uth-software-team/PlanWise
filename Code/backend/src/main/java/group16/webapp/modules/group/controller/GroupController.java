@@ -30,10 +30,10 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * UC-09 groups and members, plus the CG-11 availability endpoint. Group CRUD is implemented (GR-02); the member
- * endpoints (GR-03) and availability (GR-04) are still contract stubs that answer 501 NOT_IMPLEMENTED.
- * Errors: 404 missing group, 403 insufficient membership or role, 409 DATA_CONFLICT when the last
- * leader tries to leave (GR-03).
+ * UC-09 groups and members, plus the CG-11 availability endpoint. Group CRUD (GR-02) and member management (GR-03)
+ * are implemented; availability (GR-04) is still a contract stub that answers 501 NOT_IMPLEMENTED.
+ * Errors: 404 missing group or target, 403 insufficient membership or role, 409 DATA_CONFLICT for a duplicate
+ * member or when the last leader would leave or be demoted.
  */
 @RestController
 @RequestMapping("/v1/groups")
@@ -74,21 +74,22 @@ public class GroupController {
     @PostMapping("/{id}/members")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<MemberResponse> addMember(@PathVariable Long id, @Valid @RequestBody MemberAddRequest request) {
-        throw notImplemented();
+        return ApiResponse.ok(groupService.addMember(SecurityUtils.requireCurrentUserId(), id, request));
     }
 
     /** ACTIVE LEADER only. */
     @PatchMapping("/{id}/members/{userId}")
     public ApiResponse<MemberResponse> changeMemberRole(@PathVariable Long id, @PathVariable Long userId,
                                                         @Valid @RequestBody RoleUpdateRequest request) {
-        throw notImplemented();
+        return ApiResponse.ok(
+                groupService.changeMemberRole(SecurityUtils.requireCurrentUserId(), id, userId, request));
     }
 
     /** ACTIVE LEADER removes a member, or a member leaves (userId = caller). Membership becomes INACTIVE. */
     @DeleteMapping("/{id}/members/{userId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeMember(@PathVariable Long id, @PathVariable Long userId) {
-        throw notImplemented();
+        groupService.removeMember(SecurityUtils.requireCurrentUserId(), id, userId);
     }
 
     /** CG-11: ACTIVE members see member ids and BUSY intervals only. */

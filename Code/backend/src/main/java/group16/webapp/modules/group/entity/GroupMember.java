@@ -50,6 +50,25 @@ public class GroupMember extends BaseEntity {
         this.joinedAt = joinedAt;
     }
 
+    public void changeRole(GroupRole role) {
+        this.role = role;
+    }
+
+    /** Leaving or removal: the row stays (group, user, role and joinedAt are preserved). */
+    public void deactivate(Instant now) {
+        this.status = MembershipStatus.INACTIVE;
+        // V7 requires left_at >= joined_at.
+        this.leftAt = now.isBefore(joinedAt) ? joinedAt : now;
+    }
+
+    /** Rejoining reuses the row: always MEMBER (a former LEADER role is not restored), joinedAt reset. */
+    public void reactivate(Instant now) {
+        this.role = GroupRole.MEMBER;
+        this.status = MembershipStatus.ACTIVE;
+        this.joinedAt = now;
+        this.leftAt = null;
+    }
+
     public Long getGroupId() { return groupId; }
     public Long getUserId() { return userId; }
     public GroupRole getRole() { return role; }
