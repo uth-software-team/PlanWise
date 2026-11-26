@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Lock, Trash2, Save, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,17 +30,13 @@ export function EditSessionModal({
   onSave,
   onDelete,
 }: EditSessionModalProps) {
-  const [startLocal, setStartLocal] = useState('');
-  const [endLocal, setEndLocal] = useState('');
+  const [startLocal, setStartLocal] = useState(() =>
+    session ? toLocalDateTimeInput(session.startAt) : '',
+  );
+  const [endLocal, setEndLocal] = useState(() =>
+    session ? toLocalDateTimeInput(session.endAt) : '',
+  );
   const [localError, setLocalError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (session) {
-      setStartLocal(toLocalDateTimeInput(session.startAt));
-      setEndLocal(toLocalDateTimeInput(session.endAt));
-      setLocalError(null);
-    }
-  }, [session]);
 
   if (!session) return null;
 

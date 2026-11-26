@@ -66,7 +66,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     return undefined as T;
   }
 
-  let payload: ApiEnvelope<T> | null = null;
+  let payload: ApiEnvelope<T>;
   try {
     payload = (await response.json()) as ApiEnvelope<T>;
   } catch {

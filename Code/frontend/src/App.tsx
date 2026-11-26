@@ -1,7 +1,7 @@
-import { SchedulePage } from '@/features/schedule/components/SchedulePage';
+import { SchedulePage } from '@/features/schedule/components/SchedulePage'
 
 export function App() {
-  return <SchedulePage />;
+  return <SchedulePage />
 }
 
-export default App;
+export default App

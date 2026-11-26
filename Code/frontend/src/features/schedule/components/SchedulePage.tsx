@@ -80,8 +80,40 @@ export function SchedulePage() {
   }, [visibleRange]);
 
   useEffect(() => {
-    void loadScheduleData();
-  }, [loadScheduleData]);
+    let cancelled = false;
+    const startIso = visibleRange.start.toISOString();
+    const endIso = visibleRange.end.toISOString();
+
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setIsLoading(true);
+      setPageError(null);
+      try {
+        const [committed, currentProposal] = await Promise.all([
+          scheduleApi.listCommittedSessions(startIso, endIso),
+          scheduleApi.getCurrentProposal(),
+        ]);
+        if (cancelled) return;
+        setCommittedSessions(committed);
+        setActiveProposal(currentProposal);
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError) {
+          setPageError(`${err.code}: ${err.message}`);
+        } else {
+          setPageError('Unable to load schedule data. Verify backend server is running.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visibleRange]);
 
   const combinedSessions = useMemo(() => {
     const proposed = activeProposal?.sessions ?? [];
@@ -412,6 +444,7 @@ export function SchedulePage() {
 
       {/* FE-SC-02: Edit / Remove Session Modal */}
       <EditSessionModal
+        key={selectedSession?.sessionId ?? 'closed'}
         session={selectedSession}
         batchVersion={activeProposal?.version ?? null}
         isBusy={isActionBusy}
