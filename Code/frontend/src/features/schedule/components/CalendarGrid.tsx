@@ -1,14 +1,21 @@
 import { useMemo } from 'react';
 import { Calendar as CalendarIcon, Lock, Sparkles } from 'lucide-react';
 import { cn, formatTimeRange } from '@/lib/utils';
-import type { ProposedSession } from '../types';
+import type { ProposedSession, ScheduleGridSession } from '../types';
 
 interface CalendarGridProps {
   viewMode: 'week' | 'day';
   anchorDate: Date;
-  sessions: ProposedSession[];
+  sessions: ScheduleGridSession[];
+  /** Show "no sessions" only when the calendar loaded successfully; otherwise render the empty grid. */
+  showEmptyState: boolean;
   conflictSessionIds: Set<number>;
+  /** Only proposal sessions are selectable; committed calendar sessions are read-only. */
   onSelectSession: (session: ProposedSession) => void;
+}
+
+function isProposalSession(session: ScheduleGridSession): session is ProposedSession {
+  return 'version' in session;
 }
 
 const START_HOUR = 6;
@@ -46,6 +53,7 @@ export function CalendarGrid({
   viewMode,
   anchorDate,
   sessions,
+  showEmptyState,
   conflictSessionIds,
   onSelectSession,
 }: CalendarGridProps) {
@@ -56,7 +64,7 @@ export function CalendarGrid({
   );
   const today = new Date();
 
-  if (sessions.length === 0) {
+  if (sessions.length === 0 && showEmptyState) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
         <div className="rounded-full bg-indigo-50 p-3 text-indigo-600">
@@ -167,22 +175,8 @@ export function CalendarGrid({
 
                   const isProposed = session.status === 'PROPOSED';
                   const hasConflict = conflictSessionIds.has(session.sessionId);
-
-                  return (
-                    <button
-                      key={`${session.status}-${session.sessionId}`}
-                      type="button"
-                      onClick={() => onSelectSession(session)}
-                      style={{ top: `${topPx}px`, height: `${heightPx}px` }}
-                      className={cn(
-                        'absolute inset-x-1.5 z-10 flex flex-col justify-between overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-xs transition-all cursor-pointer shadow-xs',
-                        isProposed
-                          ? 'border-2 border-dashed border-amber-400 bg-amber-50/95 text-amber-950 hover:bg-amber-100'
-                          : 'border border-emerald-300 bg-emerald-50/95 text-emerald-950 hover:bg-emerald-100',
-                        hasConflict &&
-                          'ring-2 ring-rose-500 border-rose-500 bg-rose-50 text-rose-950',
-                      )}
-                    >
+                  const content = (
+                    <>
                       <div className="flex items-center justify-between gap-1 font-semibold leading-tight">
                         <span className="truncate">{session.taskTitle}</span>
                         {isProposed ? (
@@ -194,6 +188,47 @@ export function CalendarGrid({
                       <div className="truncate text-[11px] opacity-80">
                         {formatTimeRange(session.startAt, session.endAt)}
                       </div>
+                    </>
+                  );
+                  const style = { top: `${topPx}px`, height: `${heightPx}px` };
+                  const baseClass =
+                    'absolute inset-x-1.5 z-10 flex flex-col justify-between overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-xs shadow-xs';
+                  const conflictClass =
+                    hasConflict && 'ring-2 ring-rose-500 border-rose-500 bg-rose-50 text-rose-950';
+
+                  if (!isProposalSession(session)) {
+                    return (
+                      <div
+                        key={`calendar-${session.sessionId}`}
+                        style={style}
+                        title={`${session.status} (read-only)`}
+                        className={cn(
+                          baseClass,
+                          'border border-emerald-300 bg-emerald-50/95 text-emerald-950',
+                          conflictClass,
+                        )}
+                      >
+                        {content}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={`proposal-${session.sessionId}`}
+                      type="button"
+                      onClick={() => onSelectSession(session)}
+                      style={style}
+                      className={cn(
+                        baseClass,
+                        'transition-all cursor-pointer',
+                        isProposed
+                          ? 'border-2 border-dashed border-amber-400 bg-amber-50/95 text-amber-950 hover:bg-amber-100'
+                          : 'border border-emerald-300 bg-emerald-50/95 text-emerald-950 hover:bg-emerald-100',
+                        conflictClass,
+                      )}
+                    >
+                      {content}
                     </button>
                   );
                 })}

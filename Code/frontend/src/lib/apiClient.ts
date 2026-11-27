@@ -16,7 +16,39 @@ export interface ApiEnvelope<T> {
   code?: string;
   message?: string;
   data: T;
-  conflicts?: ConflictErrorDto[];
+}
+
+const CONFLICT_CODES: ReadonlySet<string> = new Set<ConflictErrorDto['code']>([
+  'SESSION_OVERLAP',
+  'FIXED_EVENT_OVERLAP',
+  'OUTSIDE_AVAILABILITY',
+  'PAST_TIME',
+  'DEADLINE_EXCEEDED',
+  'DURATION_EXCEEDED',
+  'TASK_NOT_SCHEDULABLE',
+]);
+
+function isConflictErrorDto(value: unknown): value is ConflictErrorDto {
+  if (value === null || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    (entry.sessionId === null ||
+      (typeof entry.sessionId === 'number' && Number.isFinite(entry.sessionId))) &&
+    typeof entry.code === 'string' &&
+    CONFLICT_CODES.has(entry.code) &&
+    typeof entry.message === 'string'
+  );
+}
+
+/**
+ * 409 CONSTRAINT_VIOLATION carries `data = { conflicts: [...] }` (CG-05). Keeps valid entries in order and
+ * skips malformed ones individually; any other `data` shape yields no conflicts.
+ */
+function readConflicts(data: unknown): ConflictErrorDto[] {
+  if (data === null || typeof data !== 'object') return [];
+  const conflicts = (data as { conflicts?: unknown }).conflicts;
+  if (!Array.isArray(conflicts)) return [];
+  return conflicts.filter(isConflictErrorDto);
 }
 
 export class ApiError extends Error {
@@ -81,7 +113,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
       response.status,
       payload.code ?? 'UNKNOWN_ERROR',
       payload.message ?? `Request failed (${response.status})`,
-      payload.conflicts ?? [],
+      readConflicts(payload.data),
     );
   }
 

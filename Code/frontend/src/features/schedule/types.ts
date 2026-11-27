@@ -12,6 +12,30 @@ export interface ProposedSession {
   version: number;
 }
 
+export type CommittedSessionStatus = 'CONFIRMED' | 'COMPLETED';
+
+/** A committed session from GET /v1/calendar (`CalendarSession`). Read-only: it carries no version. */
+export interface CommittedSession {
+  sessionId: number;
+  taskId: number;
+  taskTitle: string;
+  startAt: string;
+  endAt: string;
+  status: CommittedSessionStatus;
+}
+
+/** What the calendar grid renders: editable proposal sessions and read-only committed sessions. */
+export type ScheduleGridSession = ProposedSession | CommittedSession;
+
+/** `data` of GET /v1/calendar. Fixed events are not rendered by the schedule page yet (FE-CAL). */
+export interface CalendarResponse {
+  start: string;
+  end: string;
+  timezone: string;
+  sessions: Array<Omit<CommittedSession, 'status'> & { status: string }>;
+  fixedEvents: unknown[];
+}
+
 export interface UnscheduledTask {
   taskId: number;
   taskTitle: string;

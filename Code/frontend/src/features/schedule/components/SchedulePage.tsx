@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,9 +9,14 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ApiError, getAuthToken, setAuthToken, type ConflictErrorDto } from '@/lib/apiClient';
-import { scheduleApi } from '../api/scheduleApi';
-import type { GenerateScheduleRequest, ProposalBatchResponse, ProposedSession } from '../types';
+import { getAuthToken } from '@/lib/apiClient';
+import {
+  INITIAL_SCHEDULE_STATE,
+  createScheduleController,
+  deriveScheduleView,
+  type ScheduleState,
+} from '../api/scheduleApi';
+import type { GenerateScheduleRequest, ProposedSession } from '../types';
 import { CalendarGrid } from './CalendarGrid';
 import { EditSessionModal } from './EditSessionModal';
 import { GenerateScheduleModal } from './GenerateScheduleModal';
@@ -35,98 +40,57 @@ export function SchedulePage() {
   const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
   const [anchorDate, setAnchorDate] = useState<Date>(() => new Date());
 
-  // 4-state lifecycle: loading, error, data (committedSessions + activeProposal)
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [pageError, setPageError] = useState<string | null>(null);
-  const [committedSessions, setCommittedSessions] = useState<ProposedSession[]>([]);
-  const [activeProposal, setActiveProposal] = useState<ProposalBatchResponse | null>(null);
+  // Server data, errors and busy state live in the controller (bound to the current account).
+  const [schedule, setSchedule] = useState<ScheduleState>(INITIAL_SCHEDULE_STATE);
 
-  // Interactive modals & action state
+  // Interactive modals (UI only)
   const [isGenerateOpen, setIsGenerateOpen] = useState<boolean>(false);
-  const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<ProposedSession | null>(null);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [conflicts, setConflicts] = useState<ConflictErrorDto[]>([]);
-  const [isActionBusy, setIsActionBusy] = useState<boolean>(false);
 
   // Quick JWT token bar for standalone local testing
   const [tokenInput, setTokenInput] = useState<string>(() => getAuthToken());
   const [showTokenBar, setShowTokenBar] = useState<boolean>(() => !getAuthToken());
 
-  const visibleRange = useMemo(() => getVisibleRange(anchorDate, viewMode), [anchorDate, viewMode]);
-
-  const loadScheduleData = useCallback(async () => {
-    setIsLoading(true);
-    setPageError(null);
-    try {
-      const [committed, currentProposal] = await Promise.all([
-        scheduleApi.listCommittedSessions(
-          visibleRange.start.toISOString(),
-          visibleRange.end.toISOString(),
-        ),
-        scheduleApi.getCurrentProposal(),
-      ]);
-      setCommittedSessions(committed);
-      setActiveProposal(currentProposal);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setPageError(`${err.code}: ${err.message}`);
-      } else {
-        setPageError('Unable to load schedule data. Verify backend server is running.');
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [visibleRange]);
+  const controller = useMemo(
+    () =>
+      createScheduleController(setSchedule, {
+        // Another account (this tab or another one): close everything that belonged to the previous one.
+        onAccountChange(token) {
+          setSelectedSession(null);
+          setIsGenerateOpen(false);
+          setTokenInput(token);
+        },
+      }),
+    [],
+  );
+  const view = useMemo(() => deriveScheduleView(schedule), [schedule]);
+  const activeProposal = schedule.proposal;
 
   useEffect(() => {
-    let cancelled = false;
-    const startIso = visibleRange.start.toISOString();
-    const endIso = visibleRange.end.toISOString();
+    // Token replaced or removed in another tab (storage.clear() has key === null).
+    function onStorage() {
+      void controller.syncWithStorage().done;
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [controller]);
 
-    Promise.resolve().then(async () => {
-      if (cancelled) return;
-      setIsLoading(true);
-      setPageError(null);
-      try {
-        const [committed, currentProposal] = await Promise.all([
-          scheduleApi.listCommittedSessions(startIso, endIso),
-          scheduleApi.getCurrentProposal(),
-        ]);
-        if (cancelled) return;
-        setCommittedSessions(committed);
-        setActiveProposal(currentProposal);
-      } catch (err) {
-        if (cancelled) return;
-        if (err instanceof ApiError) {
-          setPageError(`${err.code}: ${err.message}`);
-        } else {
-          setPageError('Unable to load schedule data. Verify backend server is running.');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    });
+  const visibleRange = useMemo(() => getVisibleRange(anchorDate, viewMode), [anchorDate, viewMode]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [visibleRange]);
-
-  const combinedSessions = useMemo(() => {
-    const proposed = activeProposal?.sessions ?? [];
-    return [...committedSessions, ...proposed];
-  }, [committedSessions, activeProposal]);
+  useEffect(() => {
+    // Deferred so the effect itself never sets state synchronously.
+    void Promise.resolve().then(() =>
+      controller.setRange(visibleRange.start.toISOString(), visibleRange.end.toISOString()),
+    );
+  }, [controller, visibleRange]);
 
   const conflictSessionIds = useMemo(() => {
     const ids = new Set<number>();
-    for (const c of conflicts) {
+    for (const c of schedule.conflicts) {
       if (c.sessionId !== null) ids.add(c.sessionId);
     }
     return ids;
-  }, [conflicts]);
+  }, [schedule.conflicts]);
 
   function handleNavigate(direction: -1 | 0 | 1) {
     if (direction === 0) {
@@ -138,27 +102,9 @@ export function SchedulePage() {
     setAnchorDate(next);
   }
 
+  // Each handler only closes its modal when the action succeeded for the account that started it.
   async function handleGenerate(req: GenerateScheduleRequest) {
-    setIsActionBusy(true);
-    setGenerateError(null);
-    setConflicts([]);
-    try {
-      const batch = await scheduleApi.generateProposal(req);
-      setActiveProposal(batch);
-      setIsGenerateOpen(false);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setGenerateError(
-          err.code === 'NO_AVAILABILITY_RULE'
-            ? 'No active availability rules found. Please configure your weekly study/work hours first.'
-            : `${err.code}: ${err.message}`,
-        );
-      } else {
-        setGenerateError('Failed to generate schedule proposal.');
-      }
-    } finally {
-      setIsActionBusy(false);
-    }
+    if (await controller.generate(req)) setIsGenerateOpen(false);
   }
 
   async function handleEditSession(
@@ -167,90 +113,18 @@ export function SchedulePage() {
     endAtIso: string,
     batchVersion: number,
   ) {
-    setIsActionBusy(true);
-    setSessionError(null);
-    setConflicts([]);
-    try {
-      const updated = await scheduleApi.editSession(sessionId, {
-        startAt: startAtIso,
-        endAt: endAtIso,
-        version: batchVersion,
-      });
-      setActiveProposal(updated);
+    if (await controller.editSession(sessionId, startAtIso, endAtIso, batchVersion)) {
       setSelectedSession(null);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setSessionError(`${err.code}: ${err.message}`);
-        if (err.code === 'STALE_VERSION') {
-          void loadScheduleData();
-        }
-      } else {
-        setSessionError('Failed to update session.');
-      }
-    } finally {
-      setIsActionBusy(false);
     }
   }
 
   async function handleDeleteSession(sessionId: number, batchVersion: number) {
-    setIsActionBusy(true);
-    setSessionError(null);
-    setConflicts([]);
-    try {
-      const updated = await scheduleApi.deleteSession(sessionId, batchVersion);
-      setActiveProposal(updated);
-      setSelectedSession(null);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setSessionError(`${err.code}: ${err.message}`);
-      } else {
-        setSessionError('Failed to remove session.');
-      }
-    } finally {
-      setIsActionBusy(false);
-    }
+    if (await controller.deleteSession(sessionId, batchVersion)) setSelectedSession(null);
   }
 
-  async function handleConfirmProposal() {
-    if (!activeProposal) return;
-    setIsActionBusy(true);
-    setConflicts([]);
-    setPageError(null);
-    try {
-      await scheduleApi.confirmProposal(activeProposal.proposalId, {
-        version: activeProposal.version,
-      });
-      setActiveProposal(null);
-      await loadScheduleData();
-    } catch (err) {
-      if (err instanceof ApiError) {
-        if (err.conflicts.length > 0) {
-          setConflicts(err.conflicts);
-        } else {
-          setPageError(`${err.code}: ${err.message}`);
-        }
-      } else {
-        setPageError('Failed to confirm schedule.');
-      }
-    } finally {
-      setIsActionBusy(false);
-    }
-  }
-
-  async function handleDiscardProposal() {
-    if (!activeProposal) return;
-    setIsActionBusy(true);
-    setConflicts([]);
-    try {
-      await scheduleApi.discardProposal(activeProposal.proposalId, activeProposal.version);
-      setActiveProposal(null);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setPageError(`${err.code}: ${err.message}`);
-      }
-    } finally {
-      setIsActionBusy(false);
-    }
+  function handleApplyToken() {
+    // A different token closes the previous account's modals via onAccountChange.
+    void controller.applyToken(tokenInput).done;
   }
 
   return (
@@ -286,16 +160,18 @@ export function SchedulePage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => void loadScheduleData()}
-              disabled={isLoading}
+              onClick={() => void controller.refresh()}
+              disabled={schedule.calendar.status === 'loading'}
             >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-4 w-4 ${schedule.calendar.status === 'loading' ? 'animate-spin' : ''}`}
+              />
               Refresh
             </Button>
             <Button
               type="button"
               onClick={() => {
-                setGenerateError(null);
+                controller.dismiss('generateError');
                 setIsGenerateOpen(true);
               }}
             >
@@ -317,14 +193,7 @@ export function SchedulePage() {
                 onChange={(e) => setTokenInput(e.target.value)}
                 className="min-w-[260px] flex-1 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs text-slate-900"
               />
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  setAuthToken(tokenInput);
-                  void loadScheduleData();
-                }}
-              >
+              <Button type="button" size="sm" onClick={handleApplyToken}>
                 Apply & Reload
               </Button>
             </div>
@@ -334,21 +203,43 @@ export function SchedulePage() {
 
       <main className="mx-auto max-w-7xl space-y-4 px-4 py-6 sm:px-6">
         {/* Global Error State */}
-        {pageError && (
+        {schedule.pageError && (
           <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-            <div>{pageError}</div>
+            <div>{schedule.pageError}</div>
           </div>
+        )}
+
+        {/* Partial load failures: the rest of the page stays usable */}
+        {[
+          schedule.calendar.status === 'error' ? schedule.calendar.message : null,
+          schedule.proposalError,
+        ].map(
+          (message) =>
+            message && (
+              <div
+                key={message}
+                role="status"
+                className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>{message}</div>
+              </div>
+            ),
         )}
 
         {/* FE-SC-03: Active Proposal Review & Conflict Resolution Bar */}
         {activeProposal && (
           <ProposalReviewBar
             proposal={activeProposal}
-            conflicts={conflicts}
-            isBusy={isActionBusy}
-            onConfirm={handleConfirmProposal}
-            onDiscard={handleDiscardProposal}
+            conflicts={schedule.conflicts}
+            isBusy={schedule.isBusy}
+            onConfirm={async () => {
+              await controller.confirm();
+            }}
+            onDiscard={async () => {
+              await controller.discard();
+            }}
           />
         )}
 
@@ -412,7 +303,7 @@ export function SchedulePage() {
         </div>
 
         {/* Loading State vs Calendar Grid */}
-        {isLoading ? (
+        {view.showSpinner ? (
           <div className="flex h-96 items-center justify-center rounded-xl border border-slate-200 bg-white">
             <div className="flex items-center gap-2.5 text-sm font-medium text-slate-500">
               <RefreshCw className="h-5 w-5 animate-spin text-indigo-600" />
@@ -420,16 +311,25 @@ export function SchedulePage() {
             </div>
           </div>
         ) : (
-          <CalendarGrid
-            viewMode={viewMode}
-            anchorDate={anchorDate}
-            sessions={combinedSessions}
-            conflictSessionIds={conflictSessionIds}
-            onSelectSession={(s) => {
-              setSessionError(null);
-              setSelectedSession(s);
-            }}
-          />
+          <>
+            {view.pendingNote && (
+              <div role="status" className="flex items-center gap-2 text-xs text-slate-500">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                <span>{view.pendingNote}</span>
+              </div>
+            )}
+            <CalendarGrid
+              viewMode={viewMode}
+              anchorDate={anchorDate}
+              sessions={view.sessions}
+              showEmptyState={view.showEmptyState}
+              conflictSessionIds={conflictSessionIds}
+              onSelectSession={(s) => {
+                controller.dismiss('sessionError');
+                setSelectedSession(s);
+              }}
+            />
+          </>
         )}
       </main>
 
@@ -437,8 +337,8 @@ export function SchedulePage() {
       <GenerateScheduleModal
         open={isGenerateOpen}
         onOpenChange={setIsGenerateOpen}
-        isSubmitting={isActionBusy}
-        errorMessage={generateError}
+        isSubmitting={schedule.isBusy}
+        errorMessage={schedule.generateError}
         onSubmit={handleGenerate}
       />
 
@@ -447,8 +347,8 @@ export function SchedulePage() {
         key={selectedSession?.sessionId ?? 'closed'}
         session={selectedSession}
         batchVersion={activeProposal?.version ?? null}
-        isBusy={isActionBusy}
-        errorMessage={sessionError}
+        isBusy={schedule.isBusy}
+        errorMessage={schedule.sessionError}
         onClose={() => setSelectedSession(null)}
         onSave={handleEditSession}
         onDelete={handleDeleteSession}
