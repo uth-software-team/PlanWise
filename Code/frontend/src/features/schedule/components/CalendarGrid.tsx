@@ -1,44 +1,44 @@
-import { useMemo } from 'react';
-import { Calendar as CalendarIcon, Lock, Sparkles } from 'lucide-react';
-import { cn, formatTimeRange } from '@/lib/utils';
-import type { ProposedSession, ScheduleGridSession } from '../types';
+import { useMemo } from 'react'
+import { Calendar as CalendarIcon, Lock, Sparkles } from 'lucide-react'
+import { cn, formatTimeRange } from '@/lib/utils'
+import type { ProposedSession, ScheduleGridSession } from '../types'
 
 interface CalendarGridProps {
-  viewMode: 'week' | 'day';
-  anchorDate: Date;
-  sessions: ScheduleGridSession[];
+  viewMode: 'week' | 'day'
+  anchorDate: Date
+  sessions: ScheduleGridSession[]
   /** Show "no sessions" only when the calendar loaded successfully; otherwise render the empty grid. */
-  showEmptyState: boolean;
-  conflictSessionIds: Set<number>;
+  showEmptyState: boolean
+  conflictSessionIds: Set<number>
   /** Only proposal sessions are selectable; committed calendar sessions are read-only. */
-  onSelectSession: (session: ProposedSession) => void;
+  onSelectSession: (session: ProposedSession) => void
 }
 
 function isProposalSession(session: ScheduleGridSession): session is ProposedSession {
-  return 'version' in session;
+  return 'version' in session
 }
 
-const START_HOUR = 6;
-const END_HOUR = 23;
-const HOUR_HEIGHT = 56; // px per hour
+const START_HOUR = 6
+const END_HOUR = 23
+const HOUR_HEIGHT = 56 // px per hour
 
 function getWeekDays(anchor: Date, mode: 'week' | 'day'): Date[] {
   if (mode === 'day') {
-    const d = new Date(anchor);
-    d.setHours(0, 0, 0, 0);
-    return [d];
+    const d = new Date(anchor)
+    d.setHours(0, 0, 0, 0)
+    return [d]
   }
-  const d = new Date(anchor);
-  const day = d.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diffToMonday);
-  d.setHours(0, 0, 0, 0);
+  const d = new Date(anchor)
+  const day = d.getDay()
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  d.setDate(d.getDate() + diffToMonday)
+  d.setHours(0, 0, 0, 0)
 
   return Array.from({ length: 7 }, (_, idx) => {
-    const item = new Date(d);
-    item.setDate(d.getDate() + idx);
-    return item;
-  });
+    const item = new Date(d)
+    item.setDate(d.getDate() + idx)
+    return item
+  })
 }
 
 function isSameLocalDay(a: Date, b: Date): boolean {
@@ -46,7 +46,7 @@ function isSameLocalDay(a: Date, b: Date): boolean {
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
-  );
+  )
 }
 
 export function CalendarGrid({
@@ -57,12 +57,12 @@ export function CalendarGrid({
   conflictSessionIds,
   onSelectSession,
 }: CalendarGridProps) {
-  const days = useMemo(() => getWeekDays(anchorDate, viewMode), [anchorDate, viewMode]);
+  const days = useMemo(() => getWeekDays(anchorDate, viewMode), [anchorDate, viewMode])
   const hours = useMemo(
     () => Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i),
     [],
-  );
-  const today = new Date();
+  )
+  const today = new Date()
 
   if (sessions.length === 0 && showEmptyState) {
     return (
@@ -78,7 +78,7 @@ export function CalendarGrid({
           automatically fit your pending tasks into your available time slots.
         </p>
       </div>
-    );
+    )
   }
 
   return (
@@ -98,7 +98,7 @@ export function CalendarGrid({
             {Math.abs(Math.round(new Date().getTimezoneOffset() / 60))}
           </div>
           {days.map((day) => {
-            const isToday = isSameLocalDay(day, today);
+            const isToday = isSameLocalDay(day, today)
             return (
               <div
                 key={day.toISOString()}
@@ -119,7 +119,7 @@ export function CalendarGrid({
                   {day.getDate()}
                 </div>
               </div>
-            );
+            )
           })}
         </div>
 
@@ -148,7 +148,7 @@ export function CalendarGrid({
 
           {/* Day columns */}
           {days.map((day) => {
-            const daySessions = sessions.filter((s) => isSameLocalDay(new Date(s.startAt), day));
+            const daySessions = sessions.filter((s) => isSameLocalDay(new Date(s.startAt), day))
             return (
               <div
                 key={day.toISOString()}
@@ -163,18 +163,18 @@ export function CalendarGrid({
                 ))}
 
                 {daySessions.map((session) => {
-                  const start = new Date(session.startAt);
-                  const end = new Date(session.endAt);
-                  const startMins = (start.getHours() - START_HOUR) * 60 + start.getMinutes();
+                  const start = new Date(session.startAt)
+                  const end = new Date(session.endAt)
+                  const startMins = (start.getHours() - START_HOUR) * 60 + start.getMinutes()
                   const durationMins = Math.max(
                     25,
                     Math.round((end.getTime() - start.getTime()) / 60000),
-                  );
-                  const topPx = Math.max(0, (startMins / 60) * HOUR_HEIGHT);
-                  const heightPx = Math.max(28, (durationMins / 60) * HOUR_HEIGHT);
+                  )
+                  const topPx = Math.max(0, (startMins / 60) * HOUR_HEIGHT)
+                  const heightPx = Math.max(28, (durationMins / 60) * HOUR_HEIGHT)
 
-                  const isProposed = session.status === 'PROPOSED';
-                  const hasConflict = conflictSessionIds.has(session.sessionId);
+                  const isProposed = session.status === 'PROPOSED'
+                  const hasConflict = conflictSessionIds.has(session.sessionId)
                   const content = (
                     <>
                       <div className="flex items-center justify-between gap-1 font-semibold leading-tight">
@@ -189,12 +189,12 @@ export function CalendarGrid({
                         {formatTimeRange(session.startAt, session.endAt)}
                       </div>
                     </>
-                  );
-                  const style = { top: `${topPx}px`, height: `${heightPx}px` };
+                  )
+                  const style = { top: `${topPx}px`, height: `${heightPx}px` }
                   const baseClass =
-                    'absolute inset-x-1.5 z-10 flex flex-col justify-between overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-xs shadow-xs';
+                    'absolute inset-x-1.5 z-10 flex flex-col justify-between overflow-hidden rounded-lg px-2.5 py-1.5 text-left text-xs shadow-xs'
                   const conflictClass =
-                    hasConflict && 'ring-2 ring-rose-500 border-rose-500 bg-rose-50 text-rose-950';
+                    hasConflict && 'ring-2 ring-rose-500 border-rose-500 bg-rose-50 text-rose-950'
 
                   if (!isProposalSession(session)) {
                     return (
@@ -210,7 +210,7 @@ export function CalendarGrid({
                       >
                         {content}
                       </div>
-                    );
+                    )
                   }
 
                   return (
@@ -230,13 +230,13 @@ export function CalendarGrid({
                     >
                       {content}
                     </button>
-                  );
+                  )
                 })}
               </div>
-            );
+            )
           })}
         </div>
       </div>
     </div>
-  );
+  )
 }

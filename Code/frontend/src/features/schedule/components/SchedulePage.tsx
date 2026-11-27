@@ -1,110 +1,103 @@
-import { useEffect, useMemo, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  KeyRound,
-  RefreshCw,
-  Sparkles,
-  AlertCircle,
-} from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { getAuthToken } from '@/lib/apiClient';
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronLeft, ChevronRight, KeyRound, RefreshCw, Sparkles, AlertCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { getAuthToken } from '@/lib/apiClient'
 import {
   INITIAL_SCHEDULE_STATE,
   createScheduleController,
   deriveScheduleView,
   type ScheduleState,
-} from '../api/scheduleApi';
-import type { GenerateScheduleRequest, ProposedSession } from '../types';
-import { CalendarGrid } from './CalendarGrid';
-import { EditSessionModal } from './EditSessionModal';
-import { GenerateScheduleModal } from './GenerateScheduleModal';
-import { ProposalReviewBar } from './ProposalReviewBar';
+} from '../api/scheduleApi'
+import type { GenerateScheduleRequest, ProposedSession } from '../types'
+import { CalendarGrid } from './CalendarGrid'
+import { EditSessionModal } from './EditSessionModal'
+import { GenerateScheduleModal } from './GenerateScheduleModal'
+import { ProposalReviewBar } from './ProposalReviewBar'
 
 function getVisibleRange(anchor: Date, mode: 'week' | 'day'): { start: Date; end: Date } {
-  const start = new Date(anchor);
+  const start = new Date(anchor)
   if (mode === 'week') {
-    const day = start.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    start.setDate(start.getDate() + diff);
+    const day = start.getDay()
+    const diff = day === 0 ? -6 : 1 - day
+    start.setDate(start.getDate() + diff)
   }
-  start.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0)
 
-  const end = new Date(start);
-  end.setDate(start.getDate() + (mode === 'week' ? 7 : 1));
-  return { start, end };
+  const end = new Date(start)
+  end.setDate(start.getDate() + (mode === 'week' ? 7 : 1))
+  return { start, end }
 }
 
 export function SchedulePage() {
-  const [viewMode, setViewMode] = useState<'week' | 'day'>('week');
-  const [anchorDate, setAnchorDate] = useState<Date>(() => new Date());
+  const [viewMode, setViewMode] = useState<'week' | 'day'>('week')
+  const [anchorDate, setAnchorDate] = useState<Date>(() => new Date())
 
   // Server data, errors and busy state live in the controller (bound to the current account).
-  const [schedule, setSchedule] = useState<ScheduleState>(INITIAL_SCHEDULE_STATE);
+  const [schedule, setSchedule] = useState<ScheduleState>(INITIAL_SCHEDULE_STATE)
 
   // Interactive modals (UI only)
-  const [isGenerateOpen, setIsGenerateOpen] = useState<boolean>(false);
-  const [selectedSession, setSelectedSession] = useState<ProposedSession | null>(null);
+  const [isGenerateOpen, setIsGenerateOpen] = useState<boolean>(false)
+  const [selectedSession, setSelectedSession] = useState<ProposedSession | null>(null)
 
   // Quick JWT token bar for standalone local testing
-  const [tokenInput, setTokenInput] = useState<string>(() => getAuthToken());
-  const [showTokenBar, setShowTokenBar] = useState<boolean>(() => !getAuthToken());
+  const [tokenInput, setTokenInput] = useState<string>(() => getAuthToken())
+  const [showTokenBar, setShowTokenBar] = useState<boolean>(() => !getAuthToken())
 
   const controller = useMemo(
     () =>
       createScheduleController(setSchedule, {
         // Another account (this tab or another one): close everything that belonged to the previous one.
         onAccountChange(token) {
-          setSelectedSession(null);
-          setIsGenerateOpen(false);
-          setTokenInput(token);
+          setSelectedSession(null)
+          setIsGenerateOpen(false)
+          setTokenInput(token)
         },
       }),
     [],
-  );
-  const view = useMemo(() => deriveScheduleView(schedule), [schedule]);
-  const activeProposal = schedule.proposal;
+  )
+  const view = useMemo(() => deriveScheduleView(schedule), [schedule])
+  const activeProposal = schedule.proposal
 
   useEffect(() => {
     // Token replaced or removed in another tab (storage.clear() has key === null).
     function onStorage() {
-      void controller.syncWithStorage().done;
+      void controller.syncWithStorage().done
     }
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [controller]);
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [controller])
 
-  const visibleRange = useMemo(() => getVisibleRange(anchorDate, viewMode), [anchorDate, viewMode]);
+  const visibleRange = useMemo(() => getVisibleRange(anchorDate, viewMode), [anchorDate, viewMode])
 
   useEffect(() => {
     // Deferred so the effect itself never sets state synchronously.
     void Promise.resolve().then(() =>
       controller.setRange(visibleRange.start.toISOString(), visibleRange.end.toISOString()),
-    );
-  }, [controller, visibleRange]);
+    )
+  }, [controller, visibleRange])
 
   const conflictSessionIds = useMemo(() => {
-    const ids = new Set<number>();
+    const ids = new Set<number>()
     for (const c of schedule.conflicts) {
-      if (c.sessionId !== null) ids.add(c.sessionId);
+      if (c.sessionId !== null) ids.add(c.sessionId)
     }
-    return ids;
-  }, [schedule.conflicts]);
+    return ids
+  }, [schedule.conflicts])
 
   function handleNavigate(direction: -1 | 0 | 1) {
     if (direction === 0) {
-      setAnchorDate(new Date());
-      return;
+      setAnchorDate(new Date())
+      return
     }
-    const next = new Date(anchorDate);
-    next.setDate(next.getDate() + direction * (viewMode === 'week' ? 7 : 1));
-    setAnchorDate(next);
+    const next = new Date(anchorDate)
+    next.setDate(next.getDate() + direction * (viewMode === 'week' ? 7 : 1))
+    setAnchorDate(next)
   }
 
   // Each handler only closes its modal when the action succeeded for the account that started it.
   async function handleGenerate(req: GenerateScheduleRequest) {
-    if (await controller.generate(req)) setIsGenerateOpen(false);
+    if (await controller.generate(req)) setIsGenerateOpen(false)
   }
 
   async function handleEditSession(
@@ -114,17 +107,17 @@ export function SchedulePage() {
     batchVersion: number,
   ) {
     if (await controller.editSession(sessionId, startAtIso, endAtIso, batchVersion)) {
-      setSelectedSession(null);
+      setSelectedSession(null)
     }
   }
 
   async function handleDeleteSession(sessionId: number, batchVersion: number) {
-    if (await controller.deleteSession(sessionId, batchVersion)) setSelectedSession(null);
+    if (await controller.deleteSession(sessionId, batchVersion)) setSelectedSession(null)
   }
 
   function handleApplyToken() {
     // A different token closes the previous account's modals via onAccountChange.
-    void controller.applyToken(tokenInput).done;
+    void controller.applyToken(tokenInput).done
   }
 
   return (
@@ -171,8 +164,8 @@ export function SchedulePage() {
             <Button
               type="button"
               onClick={() => {
-                controller.dismiss('generateError');
-                setIsGenerateOpen(true);
+                controller.dismiss('generateError')
+                setIsGenerateOpen(true)
               }}
             >
               <Sparkles className="h-4 w-4" />
@@ -235,10 +228,10 @@ export function SchedulePage() {
             conflicts={schedule.conflicts}
             isBusy={schedule.isBusy}
             onConfirm={async () => {
-              await controller.confirm();
+              await controller.confirm()
             }}
             onDiscard={async () => {
-              await controller.discard();
+              await controller.discard()
             }}
           />
         )}
@@ -325,8 +318,8 @@ export function SchedulePage() {
               showEmptyState={view.showEmptyState}
               conflictSessionIds={conflictSessionIds}
               onSelectSession={(s) => {
-                controller.dismiss('sessionError');
-                setSelectedSession(s);
+                controller.dismiss('sessionError')
+                setSelectedSession(s)
               }}
             />
           </>
@@ -354,5 +347,5 @@ export function SchedulePage() {
         onDelete={handleDeleteSession}
       />
     </div>
-  );
+  )
 }

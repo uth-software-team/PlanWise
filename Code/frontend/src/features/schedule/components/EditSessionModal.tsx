@@ -1,24 +1,24 @@
-import { useState, type FormEvent } from 'react';
-import { Lock, Trash2, Save, AlertCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
-import { formatTimeRange, fromLocalDateTimeInput, toLocalDateTimeInput } from '@/lib/utils';
-import type { ProposedSession } from '../types';
+import { useState, type FormEvent } from 'react'
+import { Lock, Trash2, Save, AlertCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
+import { formatTimeRange, fromLocalDateTimeInput, toLocalDateTimeInput } from '@/lib/utils'
+import type { ProposedSession } from '../types'
 
 interface EditSessionModalProps {
-  session: ProposedSession | null;
-  batchVersion: number | null;
-  isBusy: boolean;
-  errorMessage: string | null;
-  onClose: () => void;
+  session: ProposedSession | null
+  batchVersion: number | null
+  isBusy: boolean
+  errorMessage: string | null
+  onClose: () => void
   onSave: (
     sessionId: number,
     startAtIso: string,
     endAtIso: string,
     batchVersion: number,
-  ) => Promise<void>;
-  onDelete: (sessionId: number, batchVersion: number) => Promise<void>;
+  ) => Promise<void>
+  onDelete: (sessionId: number, batchVersion: number) => Promise<void>
 }
 
 export function EditSessionModal({
@@ -32,41 +32,41 @@ export function EditSessionModal({
 }: EditSessionModalProps) {
   const [startLocal, setStartLocal] = useState(() =>
     session ? toLocalDateTimeInput(session.startAt) : '',
-  );
+  )
   const [endLocal, setEndLocal] = useState(() =>
     session ? toLocalDateTimeInput(session.endAt) : '',
-  );
-  const [localError, setLocalError] = useState<string | null>(null);
+  )
+  const [localError, setLocalError] = useState<string | null>(null)
 
-  if (!session) return null;
+  if (!session) return null
 
-  const isProposed = session.status === 'PROPOSED';
+  const isProposed = session.status === 'PROPOSED'
 
   async function handleSave(e: FormEvent) {
-    e.preventDefault();
-    if (!session || batchVersion === null) return;
-    setLocalError(null);
+    e.preventDefault()
+    if (!session || batchVersion === null) return
+    setLocalError(null)
 
-    const startIso = fromLocalDateTimeInput(startLocal);
-    const endIso = fromLocalDateTimeInput(endLocal);
+    const startIso = fromLocalDateTimeInput(startLocal)
+    const endIso = fromLocalDateTimeInput(endLocal)
     if (new Date(startIso) >= new Date(endIso)) {
-      setLocalError('End time must be after start time.');
-      return;
+      setLocalError('End time must be after start time.')
+      return
     }
 
-    await onSave(session.sessionId, startIso, endIso, batchVersion);
+    await onSave(session.sessionId, startIso, endIso, batchVersion)
   }
 
   async function handleDelete() {
-    if (!session || batchVersion === null) return;
-    await onDelete(session.sessionId, batchVersion);
+    if (!session || batchVersion === null) return
+    await onDelete(session.sessionId, batchVersion)
   }
 
   return (
     <Dialog
       open={Boolean(session)}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) onClose()
       }}
       title={session.taskTitle}
       description={`Task #${session.taskId} • Session #${session.sessionId}`}
@@ -156,5 +156,5 @@ export function EditSessionModal({
         )}
       </div>
     </Dialog>
-  );
+  )
 }
