@@ -285,7 +285,8 @@ class ScheduleServiceIntegrationTests {
     @Test
     void editIntoThePastIsRejected() {
         ProposalBatchResponse proposal = generate();
-        Instant past = Instant.now().minus(Duration.ofHours(2));
+        // Yesterday 09:00-10:00 local: always in the past and within one local day (HC-04), at any time of day.
+        Instant past = BASE.minus(Duration.ofDays(2));
 
         AppException ex = assertThrows(AppException.class, () -> service.editSession(userId,
                 proposal.sessions().get(0).sessionId(),
