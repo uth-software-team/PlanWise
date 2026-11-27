@@ -32,14 +32,14 @@ public interface GroupService {
     MemberResponse addMember(Long callerId, Long groupId, MemberAddRequest request);
 
     /**
-     * ACTIVE LEADER only. Demoting another LEADER needs creator-only authority; the last ACTIVE LEADER cannot demote
-     * themselves (409 DATA_CONFLICT).
+     * ACTIVE LEADER only. Any ACTIVE LEADER may promote a member or demote another LEADER, including the creator;
+     * the last ACTIVE LEADER cannot demote themselves (409 DATA_CONFLICT).
      */
     MemberResponse changeMemberRole(Long callerId, Long groupId, Long userId, RoleUpdateRequest request);
 
     /**
-     * Self-leave (userId = caller, any ACTIVE member) or removal by an ACTIVE LEADER. Removing another LEADER needs
-     * creator-only authority; the last ACTIVE LEADER cannot leave (409 DATA_CONFLICT).
+     * Self-leave (userId = caller, any ACTIVE member) or removal by an ACTIVE LEADER, who may also remove another
+     * LEADER, including the creator; the last ACTIVE LEADER cannot leave (409 DATA_CONFLICT).
      */
     void removeMember(Long callerId, Long groupId, Long userId);
 }

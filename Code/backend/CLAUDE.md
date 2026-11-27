@@ -33,7 +33,7 @@ Never run migrations or data-changing commands without approval.
 - D5 Error codes from the design doc (see REST API).
 - D6 The design doc contains BR-01..BR-15 and HC-01..HC-09 (no BR-16..BR-32).
 - D7 AI provider: Google Gemini, as in the design doc (timeout 5 s, BR-12).
-- D8 No system-wide roles (actors: Guest, User). LEADER/MEMBER are per group, checked in services by `groupId`.
+- D8 No system-wide roles (actors: Guest, User). LEADER/MEMBER are per group, checked in services by `groupId`. The creator starts as LEADER; `team_groups.created_by_user_id` is historical data and grants no extra authority. Any ACTIVE LEADER of the same group may demote or remove another LEADER, including the creator; at least one ACTIVE LEADER must remain (409 `DATA_CONFLICT` on the last leader's self-demotion or self-removal). (TV1, 2026-11-27)
 - D9 Audit columns only where the ERD has them; no `created_by`/`updated_by`.
 - D10 Tests: H2 `create-drop`, Flyway disabled. Migrations are PostgreSQL-only and are verified by Testcontainers `@Tag("pg")` tests (`./gradlew pgTest`, approved as G3, added by F-03).
 - D11 No refresh token in MVP (access JWT only).

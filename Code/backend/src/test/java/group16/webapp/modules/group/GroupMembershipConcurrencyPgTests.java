@@ -7,6 +7,7 @@ import group16.webapp.common.exception.ErrorCode;
 import group16.webapp.modules.auth.entity.User;
 import group16.webapp.modules.auth.repository.UserRepository;
 import group16.webapp.modules.group.api.GroupRole;
+import group16.webapp.modules.group.api.MembershipStatus;
 import group16.webapp.modules.group.dto.GroupRequest;
 import group16.webapp.modules.group.dto.RoleUpdateRequest;
 import group16.webapp.modules.group.entity.GroupMember;
@@ -160,6 +161,72 @@ class GroupMembershipConcurrencyPgTests extends PostgresContainerTest {
 				.isEqualTo(GroupRole.MEMBER);
 	}
 
+	/**
+	 * Regression for the peer-leader rule (any ACTIVE LEADER may demote another, none of them the creator) and for
+	 * lock-before-role-check: A and B are the only ACTIVE LEADERs (the creator has left) and demote each other. A's
+	 * demotion of B holds the group lock in an open transaction; B's demotion of A blocks on that lock and, once A
+	 * commits, rechecks B's role and is FORBIDDEN. Exactly one ACTIVE LEADER and one ACTIVE MEMBER remain.
+	 */
+	@Test
+	void twoLeadersDemotingEachOtherLeaveExactlyOneActiveLeader() throws Exception {
+		User creator = newUser("pg-mutual-creator@example.com");
+		User leaderA = newUser("pg-mutual-a@example.com");
+		User leaderB = newUser("pg-mutual-b@example.com");
+		groupId = groupRepository.save(new TeamGroup(creator.getId(), "Mutual", "desc")).getId();
+		GroupMember formerCreator = new GroupMember(groupId, creator.getId(), GroupRole.LEADER, Instant.now());
+		formerCreator.deactivate(Instant.now());
+		memberRepository.save(formerCreator);
+		memberRepository.save(new GroupMember(groupId, leaderA.getId(), GroupRole.LEADER, Instant.now()));
+		memberRepository.save(new GroupMember(groupId, leaderB.getId(), GroupRole.LEADER, Instant.now()));
+		assertThat(activeLeaders()).isEqualTo(2);
+
+		CountDownLatch demotedUncommitted = new CountDownLatch(1);
+		CountDownLatch commitDemotion = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			// Transaction 1: A demotes B and keeps the transaction (and group lock) open.
+			Future<?> first = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+				groupService.changeMemberRole(leaderA.getId(), groupId, leaderB.getId(), new RoleUpdateRequest(GroupRole.MEMBER));
+				demotedUncommitted.countDown();
+				await(commitDemotion);
+			}));
+			assertThat(demotedUncommitted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+
+			// Transaction 2: B demotes A; it must block behind the lock.
+			Future<ErrorCode> second = executor.submit(() -> {
+				try {
+					groupService.changeMemberRole(leaderB.getId(), groupId, leaderA.getId(), new RoleUpdateRequest(GroupRole.MEMBER));
+					return null;
+				} catch (AppException e) {
+					return e.getErrorCode();
+				}
+			});
+			awaitBlockedOnLock();
+			assertThat(second.isDone()).as("B's demotion is blocked until A's demotion commits").isFalse();
+
+			commitDemotion.countDown();
+			first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			assertThat(second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo(ErrorCode.FORBIDDEN);
+		} finally {
+			commitDemotion.countDown();
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+		}
+
+		assertThat(activeLeaders()).isEqualTo(1);
+		assertThat(jdbc.queryForObject(
+				"SELECT count(*) FROM group_members WHERE group_id = ? AND role = 'MEMBER' AND status = 'ACTIVE'",
+				Integer.class, groupId)).isEqualTo(1);
+		GroupMember a = memberRepository.findByGroupIdAndUserId(groupId, leaderA.getId()).orElseThrow();
+		GroupMember b = memberRepository.findByGroupIdAndUserId(groupId, leaderB.getId()).orElseThrow();
+		assertThat(a.getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(a.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(b.getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(b.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(memberRepository.findByGroupIdAndUserId(groupId, creator.getId()).orElseThrow().getStatus())
+				.isEqualTo(MembershipStatus.INACTIVE);
+	}
+
 	private static void await(CountDownLatch latch) {
 		try {
 			if (!latch.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
@@ -182,7 +249,7 @@ class GroupMembershipConcurrencyPgTests extends PostgresContainerTest {
 			}
 			java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(20));
 		}
-		throw new IllegalStateException("the rename never blocked on the group lock");
+		throw new IllegalStateException("the second transaction never blocked on the group lock");
 	}
 
 	/** Waits for the other thread, then self-leaves; returns null on success or the AppException's code. */

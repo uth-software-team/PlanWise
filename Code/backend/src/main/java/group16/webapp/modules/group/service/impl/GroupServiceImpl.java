@@ -113,16 +113,13 @@ public class GroupServiceImpl implements GroupService, GroupAccessApi {
     @Transactional
     public MemberResponse changeMemberRole(Long callerId, Long groupId, Long userId, RoleUpdateRequest request) {
         requireActiveCaller(callerId);
-        TeamGroup group = lockGroup(groupId);
+        lockGroup(groupId);
         requireActiveLeader(groupId, callerId);
         GroupMember target = findActiveMember(groupId, userId);
         GroupRole newRole = request.role();
         if (target.getRole() != newRole) {
             if (newRole == GroupRole.MEMBER) {
-                // Demoting a LEADER: demoting a peer is creator-only; self-demotion needs another leader.
-                if (!userId.equals(callerId)) {
-                    requireCreator(group, callerId);
-                }
+                // Demoting a LEADER (self or any peer, including the creator): another ACTIVE LEADER must remain.
                 requireAnotherActiveLeader(groupId);
             }
             target.changeRole(newRole);
@@ -135,16 +132,14 @@ public class GroupServiceImpl implements GroupService, GroupAccessApi {
     @Transactional
     public void removeMember(Long callerId, Long groupId, Long userId) {
         requireActiveCaller(callerId);
-        TeamGroup group = lockGroup(groupId);
+        lockGroup(groupId);
         GroupMember target;
         if (userId.equals(callerId)) {
             target = requireActiveMembership(groupId, callerId);
         } else {
+            // Any ACTIVE LEADER may remove any ACTIVE member, including another LEADER or the creator.
             requireActiveLeader(groupId, callerId);
             target = findActiveMember(groupId, userId);
-            if (target.getRole() == GroupRole.LEADER) {
-                requireCreator(group, callerId);
-            }
         }
         if (target.getRole() == GroupRole.LEADER) {
             requireAnotherActiveLeader(groupId);
@@ -204,13 +199,6 @@ public class GroupServiceImpl implements GroupService, GroupAccessApi {
     private GroupMember findActiveMember(Long groupId, Long userId) {
         return memberRepository.findByGroupIdAndUserIdAndStatus(groupId, userId, MembershipStatus.ACTIVE)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
-    }
-
-    /** Creator-only authority = ACTIVE LEADER (checked by the caller) and the group's creator. */
-    private static void requireCreator(TeamGroup group, Long callerId) {
-        if (!group.getCreatedByUserId().equals(callerId)) {
-            throw new AppException(ErrorCode.FORBIDDEN);
-        }
     }
 
     /** Called when an ACTIVE LEADER is about to stop being one: at least 2 ACTIVE LEADERs must exist now. */
