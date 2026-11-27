@@ -2,8 +2,12 @@ import { useSyncExternalStore } from 'react'
 
 // MVP token storage per CG-04: access JWT in localStorage, no refresh token.
 // Every access is wrapped because storage can be unavailable (private mode, blocked site data).
-// Expiry and API 401 handling belong to FE-02.
+// This module is the only token store; apiClient reads it and clears it on a 401 for the current token (FE-02).
 const TOKEN_KEY = 'planwise.accessToken'
+
+// Key written by the old schedule token bar. Its value is never read or migrated: the current session always
+// wins, and a token removed by logout can never come back from it. It is only deleted.
+const LEGACY_TOKEN_KEY = 'planwise_token'
 
 type Listener = () => void
 const listeners = new Set<Listener>()
@@ -11,6 +15,16 @@ const listeners = new Set<Listener>()
 function notify(): void {
   listeners.forEach((listener) => listener())
 }
+
+function discardLegacyToken(): void {
+  try {
+    window.localStorage.removeItem(LEGACY_TOKEN_KEY)
+  } catch {
+    // Storage unavailable: nothing to discard.
+  }
+}
+
+discardLegacyToken()
 
 export function getToken(): string | null {
   try {
@@ -21,6 +35,7 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string): void {
+  discardLegacyToken()
   try {
     window.localStorage.setItem(TOKEN_KEY, token)
   } catch {
@@ -30,6 +45,7 @@ export function setToken(token: string): void {
 }
 
 export function clearToken(): void {
+  discardLegacyToken()
   try {
     window.localStorage.removeItem(TOKEN_KEY)
   } catch {

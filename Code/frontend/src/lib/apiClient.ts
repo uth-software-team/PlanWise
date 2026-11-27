@@ -1,3 +1,5 @@
+import { clearToken, getToken, setToken } from '@/lib/auth-token';
+
 export interface ConflictErrorDto {
   sessionId: number | null;
   code:
@@ -69,15 +71,28 @@ export class ApiError extends Error {
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1';
 
+/** The current access token, or '' when signed out. The only store is `auth-token.ts` (CG-04). */
 export function getAuthToken(): string {
-  return localStorage.getItem('planwise_token') ?? '';
+  return getToken() ?? '';
 }
 
+/** A blank token signs out. */
 export function setAuthToken(token: string): void {
-  if (token.trim()) {
-    localStorage.setItem('planwise_token', token.trim());
+  const next = token.trim();
+  if (next) {
+    setToken(next);
   } else {
-    localStorage.removeItem('planwise_token');
+    clearToken();
+  }
+}
+
+/**
+ * 401 for the token this request sent ends the session (CG-04: 401 → /login; the guards react to clearToken).
+ * A 401 that arrives after the token was replaced (another login, another tab) leaves the new session alone.
+ */
+function endSessionOn401(status: number, sentToken: string): void {
+  if (status === 401 && sentToken !== '' && getAuthToken() === sentToken) {
+    clearToken();
   }
 }
 
@@ -95,6 +110,9 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
     ...init,
     headers,
   });
+
+  // Before reading the body, so a 401 with an empty or non-JSON body also ends the session.
+  endSessionOn401(response.status, token);
 
   if (response.status === 204) {
     return undefined as T;
