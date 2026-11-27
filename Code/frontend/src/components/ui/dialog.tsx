@@ -1,16 +1,16 @@
-import * as React from 'react';
-import { X } from 'lucide-react';
+import * as React from 'react'
+import { X } from 'lucide-react'
 
 interface DialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description?: string
+  children: React.ReactNode
 }
 
 export function Dialog({ open, onOpenChange, title, description, children }: DialogProps) {
-  if (!open) return null;
+  if (!open) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-xs">
@@ -36,5 +36,5 @@ export function Dialog({ open, onOpenChange, title, description, children }: Dia
         <div className="mt-4">{children}</div>
       </div>
     </div>
-  );
+  )
 }

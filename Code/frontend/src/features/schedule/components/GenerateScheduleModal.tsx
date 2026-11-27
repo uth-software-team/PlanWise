@@ -1,16 +1,16 @@
-import { useState, type FormEvent } from 'react';
-import { Sparkles, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog } from '@/components/ui/dialog';
-import { fromLocalDateTimeInput, toLocalDateTimeInput } from '@/lib/utils';
-import type { GenerateScheduleRequest } from '../types';
+import { useState, type FormEvent } from 'react'
+import { Sparkles, AlertCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
+import { fromLocalDateTimeInput, toLocalDateTimeInput } from '@/lib/utils'
+import type { GenerateScheduleRequest } from '../types'
 
 interface GenerateScheduleModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  isSubmitting: boolean;
-  errorMessage: string | null;
-  onSubmit: (req: GenerateScheduleRequest) => Promise<void>;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  isSubmitting: boolean
+  errorMessage: string | null
+  onSubmit: (req: GenerateScheduleRequest) => Promise<void>
 }
 
 export function GenerateScheduleModal({
@@ -20,32 +20,32 @@ export function GenerateScheduleModal({
   errorMessage,
   onSubmit,
 }: GenerateScheduleModalProps) {
-  const defaultStart = new Date();
-  defaultStart.setMinutes(0, 0, 0);
-  defaultStart.setHours(defaultStart.getHours() + 1);
+  const defaultStart = new Date()
+  defaultStart.setMinutes(0, 0, 0)
+  defaultStart.setHours(defaultStart.getHours() + 1)
 
-  const defaultEnd = new Date(defaultStart);
-  defaultEnd.setDate(defaultEnd.getDate() + 7);
+  const defaultEnd = new Date(defaultStart)
+  defaultEnd.setDate(defaultEnd.getDate() + 7)
 
   const [windowStart, setWindowStart] = useState<string>(() =>
     toLocalDateTimeInput(defaultStart.toISOString()),
-  );
+  )
   const [windowEnd, setWindowEnd] = useState<string>(() =>
     toLocalDateTimeInput(defaultEnd.toISOString()),
-  );
-  const [taskFilterRaw, setTaskFilterRaw] = useState<string>('');
-  const [localError, setLocalError] = useState<string | null>(null);
+  )
+  const [taskFilterRaw, setTaskFilterRaw] = useState<string>('')
+  const [localError, setLocalError] = useState<string | null>(null)
 
   async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setLocalError(null);
+    e.preventDefault()
+    setLocalError(null)
 
-    const startIso = fromLocalDateTimeInput(windowStart);
-    const endIso = fromLocalDateTimeInput(windowEnd);
+    const startIso = fromLocalDateTimeInput(windowStart)
+    const endIso = fromLocalDateTimeInput(windowEnd)
 
     if (new Date(startIso) >= new Date(endIso)) {
-      setLocalError('End time must be strictly after start time.');
-      return;
+      setLocalError('End time must be strictly after start time.')
+      return
     }
 
     const parsedIds = taskFilterRaw
@@ -53,13 +53,13 @@ export function GenerateScheduleModal({
       .map((s) => s.trim())
       .filter(Boolean)
       .map(Number)
-      .filter((n) => Number.isInteger(n) && n > 0);
+      .filter((n) => Number.isInteger(n) && n > 0)
 
     await onSubmit({
       windowStart: startIso,
       windowEnd: endIso,
       includeTaskIds: parsedIds.length > 0 ? parsedIds : undefined,
-    });
+    })
   }
 
   return (
@@ -134,5 +134,5 @@ export function GenerateScheduleModal({
         </div>
       </form>
     </Dialog>
-  );
+  )
 }

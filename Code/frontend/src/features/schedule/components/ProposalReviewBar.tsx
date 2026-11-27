@@ -1,15 +1,15 @@
-import { CheckCircle2, Trash2, AlertTriangle, Clock } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import type { ConflictErrorDto } from '@/lib/apiClient';
-import type { ProposalBatchResponse } from '../types';
+import { CheckCircle2, Trash2, AlertTriangle, Clock } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import type { ConflictErrorDto } from '@/lib/apiClient'
+import type { ProposalBatchResponse } from '../types'
 
 interface ProposalReviewBarProps {
-  proposal: ProposalBatchResponse;
-  conflicts: ConflictErrorDto[];
-  isBusy: boolean;
-  onConfirm: () => Promise<void>;
-  onDiscard: () => Promise<void>;
+  proposal: ProposalBatchResponse
+  conflicts: ConflictErrorDto[]
+  isBusy: boolean
+  onConfirm: () => Promise<void>
+  onDiscard: () => Promise<void>
 }
 
 export function ProposalReviewBar({
@@ -114,5 +114,5 @@ export function ProposalReviewBar({
         </div>
       )}
     </div>
-  );
+  )
 }

@@ -4,7 +4,7 @@ import {
   getAuthToken,
   setAuthToken,
   type ConflictErrorDto,
-} from '@/lib/apiClient';
+} from '@/lib/apiClient'
 import type {
   CalendarResponse,
   CommittedSession,
@@ -13,36 +13,36 @@ import type {
   ProposalBatchResponse,
   ScheduleGridSession,
   SessionEditRequest,
-} from '../types';
+} from '../types'
 
 const COMMITTED_STATUSES: ReadonlySet<string> = new Set<CommittedSession['status']>([
   'CONFIRMED',
   'COMPLETED',
-]);
+])
 
 export const scheduleApi = {
   generateProposal(request: GenerateScheduleRequest): Promise<ProposalBatchResponse> {
     return apiRequest<ProposalBatchResponse>('/schedules/generate', {
       method: 'POST',
       body: JSON.stringify(request),
-    });
+    })
   },
 
   getProposal(proposalId: number): Promise<ProposalBatchResponse> {
-    return apiRequest<ProposalBatchResponse>(`/schedules/proposals/${proposalId}`);
+    return apiRequest<ProposalBatchResponse>(`/schedules/proposals/${proposalId}`)
   },
 
   discardProposal(proposalId: number, version: number): Promise<void> {
     return apiRequest<void>(`/schedules/proposals/${proposalId}?version=${version}`, {
       method: 'DELETE',
-    });
+    })
   },
 
   editSession(sessionId: number, request: SessionEditRequest): Promise<ProposalBatchResponse> {
     return apiRequest<ProposalBatchResponse>(`/schedules/sessions/${sessionId}`, {
       method: 'PUT',
       body: JSON.stringify(request),
-    });
+    })
   },
 
   deleteSession(sessionId: number, version: number): Promise<ProposalBatchResponse> {
@@ -51,14 +51,14 @@ export const scheduleApi = {
       {
         method: 'DELETE',
       },
-    );
+    )
   },
 
   confirmProposal(proposalId: number, request: ConfirmRequest): Promise<ProposalBatchResponse> {
     return apiRequest<ProposalBatchResponse>(`/schedules/${proposalId}/confirm`, {
       method: 'POST',
       body: JSON.stringify(request),
-    });
+    })
   },
 
   /**
@@ -66,61 +66,61 @@ export const scheduleApi = {
    * active proposal instead, so any other status is dropped here.
    */
   async listCommittedSessions(startIso: string, endIso: string): Promise<CommittedSession[]> {
-    const params = new URLSearchParams({ start: startIso, end: endIso });
-    const calendar = await apiRequest<CalendarResponse>(`/calendar?${params.toString()}`);
+    const params = new URLSearchParams({ start: startIso, end: endIso })
+    const calendar = await apiRequest<CalendarResponse>(`/calendar?${params.toString()}`)
     return (calendar?.sessions ?? []).flatMap((s) =>
       COMMITTED_STATUSES.has(s.status)
         ? [{ ...s, status: s.status as CommittedSession['status'] }]
         : [],
-    );
+    )
   },
-};
+}
 
 // Same-tab recovery of the PROPOSED batch after a reload (option A): only the proposal ID is kept; the batch
 // and its version are always re-read from GET /v1/schedules/proposals/{id}.
-const ACTIVE_PROPOSAL_KEY = 'planwise.schedule.activeProposalId';
+const ACTIVE_PROPOSAL_KEY = 'planwise.schedule.activeProposalId'
 
 export const activeProposalStore = {
   read(): number | null {
     try {
-      const raw = window.sessionStorage.getItem(ACTIVE_PROPOSAL_KEY);
-      const id = raw === null ? NaN : Number(raw);
-      return Number.isSafeInteger(id) && id > 0 ? id : null;
+      const raw = window.sessionStorage.getItem(ACTIVE_PROPOSAL_KEY)
+      const id = raw === null ? NaN : Number(raw)
+      return Number.isSafeInteger(id) && id > 0 ? id : null
     } catch {
-      return null;
+      return null
     }
   },
 
   write(proposalId: number | null): void {
     try {
       if (proposalId === null) {
-        window.sessionStorage.removeItem(ACTIVE_PROPOSAL_KEY);
+        window.sessionStorage.removeItem(ACTIVE_PROPOSAL_KEY)
       } else {
-        window.sessionStorage.setItem(ACTIVE_PROPOSAL_KEY, String(proposalId));
+        window.sessionStorage.setItem(ACTIVE_PROPOSAL_KEY, String(proposalId))
       }
     } catch {
       // Storage unavailable: recovery after reload is simply skipped.
     }
   },
-};
+}
 
 export type CalendarState =
   | { status: 'loading' }
   | { status: 'ready'; sessions: CommittedSession[] }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string }
 
 /** Everything the schedule page shows that comes from the server or from a schedule action. */
 export interface ScheduleState {
-  calendar: CalendarState;
-  proposal: ProposalBatchResponse | null;
-  proposalError: string | null;
+  calendar: CalendarState
+  proposal: ProposalBatchResponse | null
+  proposalError: string | null
   /** A saved proposal ID is being re-read; "No sessions" must wait for it. */
-  proposalRestoring: boolean;
-  conflicts: ConflictErrorDto[];
-  pageError: string | null;
-  generateError: string | null;
-  sessionError: string | null;
-  isBusy: boolean;
+  proposalRestoring: boolean
+  conflicts: ConflictErrorDto[]
+  pageError: string | null
+  generateError: string | null
+  sessionError: string | null
+  isBusy: boolean
 }
 
 export const INITIAL_SCHEDULE_STATE: ScheduleState = {
@@ -133,10 +133,10 @@ export const INITIAL_SCHEDULE_STATE: ScheduleState = {
   generateError: null,
   sessionError: null,
   isBusy: false,
-};
+}
 
 function describeError(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? `${err.code}: ${err.message}` : fallback;
+  return err instanceof ApiError ? `${err.code}: ${err.message}` : fallback
 }
 
 /**
@@ -154,36 +154,36 @@ export function createScheduleController(
   publish: (state: ScheduleState) => void,
   options: { onAccountChange?: (token: string) => void } = {},
 ) {
-  let state = INITIAL_SCHEDULE_STATE;
-  let account = 0;
-  let knownToken = getAuthToken();
-  let calendarTicket = 0;
-  let proposalTicket = 0;
-  let range: { startIso: string; endIso: string } | null = null;
+  let state = INITIAL_SCHEDULE_STATE
+  let account = 0
+  let knownToken = getAuthToken()
+  let calendarTicket = 0
+  let proposalTicket = 0
+  let range: { startIso: string; endIso: string } | null = null
 
   function set(patch: Partial<ScheduleState>): void {
-    state = { ...state, ...patch };
-    publish(state);
+    state = { ...state, ...patch }
+    publish(state)
   }
 
   /** Another account: drop the previous account's state, saved proposal ID and everything in flight. */
   function switchAccount(token: string): void {
-    knownToken = token;
-    account++;
-    calendarTicket++;
-    proposalTicket++;
-    activeProposalStore.write(null);
-    state = INITIAL_SCHEDULE_STATE;
-    publish(state);
-    options.onAccountChange?.(token);
+    knownToken = token
+    account++
+    calendarTicket++
+    proposalTicket++
+    activeProposalStore.write(null)
+    state = INITIAL_SCHEDULE_STATE
+    publish(state)
+    options.onAccountChange?.(token)
   }
 
   /** True when the stored token is no longer the one this page represents (it then switches accounts). */
   function accountChangedInStorage(): boolean {
-    const current = getAuthToken();
-    if (current === knownToken) return false;
-    switchAccount(current);
-    return true;
+    const current = getAuthToken()
+    if (current === knownToken) return false
+    switchAccount(current)
+    return true
   }
 
   /**
@@ -192,45 +192,45 @@ export function createScheduleController(
    * one (the late event then finds nothing to change), and the caller drops the response.
    */
   function isCurrent(owner: number): boolean {
-    if (owner !== account) return false;
-    if (!accountChangedInStorage()) return true;
-    void load();
-    return false;
+    if (owner !== account) return false
+    if (!accountChangedInStorage()) return true
+    void load()
+    return false
   }
 
   /** The server's answer to a proposal action; it wins over any proposal load still in flight. */
   function rememberProposal(batch: ProposalBatchResponse | null): void {
-    proposalTicket++;
-    const active = batch?.status === 'PROPOSED' ? batch : null;
-    activeProposalStore.write(active?.proposalId ?? null);
-    set({ proposal: active, proposalError: null, proposalRestoring: false });
+    proposalTicket++
+    const active = batch?.status === 'PROPOSED' ? batch : null
+    activeProposalStore.write(active?.proposalId ?? null)
+    set({ proposal: active, proposalError: null, proposalRestoring: false })
   }
 
   function load(): Promise<void> {
-    if (range === null) return Promise.resolve();
-    accountChangedInStorage(); // then load for whichever account is stored now
-    const owner = account;
-    const { startIso, endIso } = range;
-    const calendarRun = ++calendarTicket;
-    const proposalRun = ++proposalTicket;
-    const savedId = activeProposalStore.read();
-    set({ calendar: { status: 'loading' }, pageError: null, proposalRestoring: savedId !== null });
+    if (range === null) return Promise.resolve()
+    accountChangedInStorage() // then load for whichever account is stored now
+    const owner = account
+    const { startIso, endIso } = range
+    const calendarRun = ++calendarTicket
+    const proposalRun = ++proposalTicket
+    const savedId = activeProposalStore.read()
+    set({ calendar: { status: 'loading' }, pageError: null, proposalRestoring: savedId !== null })
 
     const calendar = scheduleApi.listCommittedSessions(startIso, endIso).then(
       (sessions) => {
-        if (calendarRun !== calendarTicket || !isCurrent(owner)) return;
-        set({ calendar: { status: 'ready', sessions } });
+        if (calendarRun !== calendarTicket || !isCurrent(owner)) return
+        set({ calendar: { status: 'ready', sessions } })
       },
       (err: unknown) => {
-        if (calendarRun !== calendarTicket || !isCurrent(owner)) return;
+        if (calendarRun !== calendarTicket || !isCurrent(owner)) return
         set({
           calendar: {
             status: 'error',
             message: `Calendar unavailable. ${describeError(err, 'Unable to reach the server.')}`,
           },
-        });
+        })
       },
-    );
+    )
 
     // No saved ID: keep whatever proposal is already on screen.
     const proposal =
@@ -238,31 +238,31 @@ export function createScheduleController(
         ? Promise.resolve()
         : scheduleApi.getProposal(savedId).then(
             (batch) => {
-              if (proposalRun !== proposalTicket || !isCurrent(owner)) return;
+              if (proposalRun !== proposalTicket || !isCurrent(owner)) return
               if (batch?.status === 'PROPOSED') {
-                set({ proposal: batch, proposalError: null, proposalRestoring: false });
+                set({ proposal: batch, proposalError: null, proposalRestoring: false })
               } else {
-                activeProposalStore.write(null);
-                set({ proposal: null, proposalError: null, proposalRestoring: false });
+                activeProposalStore.write(null)
+                set({ proposal: null, proposalError: null, proposalRestoring: false })
               }
             },
             (err: unknown) => {
-              if (proposalRun !== proposalTicket || !isCurrent(owner)) return;
+              if (proposalRun !== proposalTicket || !isCurrent(owner)) return
               if (err instanceof ApiError && err.status === 404) {
                 // Replaced, deleted or not owned by the current account.
-                activeProposalStore.write(null);
-                set({ proposal: null, proposalError: null, proposalRestoring: false });
+                activeProposalStore.write(null)
+                set({ proposal: null, proposalError: null, proposalRestoring: false })
               } else {
                 // Keep the saved ID so a later reload can retry.
                 set({
                   proposalRestoring: false,
                   proposalError: `Could not restore the open proposal. ${describeError(err, 'Unable to reach the server.')}`,
-                });
+                })
               }
             },
-          );
+          )
 
-    return Promise.all([calendar, proposal]).then(() => undefined);
+    return Promise.all([calendar, proposal]).then(() => undefined)
   }
 
   /** Runs one action for the account that started it. Resolves true only if it succeeded for that account. */
@@ -274,23 +274,23 @@ export function createScheduleController(
   ): Promise<boolean> {
     if (accountChangedInStorage()) {
       // The page still showed the previous account: never send its action with the new credential.
-      void load();
-      return false;
+      void load()
+      return false
     }
-    const owner = account;
-    set({ ...clear, conflicts: [], isBusy: true });
+    const owner = account
+    set({ ...clear, conflicts: [], isBusy: true })
     try {
       // request() reads the token synchronously, in the same tick as the check above.
-      const value = await request();
-      if (!isCurrent(owner)) return false;
-      onSuccess(value);
-      return true;
+      const value = await request()
+      if (!isCurrent(owner)) return false
+      onSuccess(value)
+      return true
     } catch (err) {
-      if (isCurrent(owner)) set(onError(err));
-      return false;
+      if (isCurrent(owner)) set(onError(err))
+      return false
     } finally {
       // After an account switch (here or in isCurrent) the new account's busy state is left alone.
-      if (owner === account) set({ isBusy: false });
+      if (owner === account) set({ isBusy: false })
     }
   }
 
@@ -298,8 +298,8 @@ export function createScheduleController(
     getState: (): ScheduleState => state,
 
     setRange(startIso: string, endIso: string): Promise<void> {
-      range = { startIso, endIso };
-      return load();
+      range = { startIso, endIso }
+      return load()
     },
 
     refresh: (): Promise<void> => load(),
@@ -309,11 +309,11 @@ export function createScheduleController(
      * token is another account, so its predecessor's state, saved ID and in-flight work are dropped first.
      */
     applyToken(token: string): { changed: boolean; done: Promise<void> } {
-      const next = token.trim();
-      const changed = next !== knownToken;
-      if (changed) switchAccount(next);
-      if (getAuthToken() !== next) setAuthToken(next);
-      return { changed, done: load() };
+      const next = token.trim()
+      const changed = next !== knownToken
+      if (changed) switchAccount(next)
+      if (getAuthToken() !== next) setAuthToken(next)
+      return { changed, done: load() }
     },
 
     /**
@@ -321,14 +321,14 @@ export function createScheduleController(
      * new value, so it is compared with the remembered token; on a change the new account is loaded.
      */
     syncWithStorage(): { changed: boolean; done: Promise<void> } {
-      const changed = accountChangedInStorage();
-      return { changed, done: changed ? load() : Promise.resolve() };
+      const changed = accountChangedInStorage()
+      return { changed, done: changed ? load() : Promise.resolve() }
     },
 
     getToken: (): string => knownToken,
 
     dismiss(field: 'generateError' | 'sessionError'): void {
-      set({ [field]: null });
+      set({ [field]: null })
     },
 
     generate: (request: GenerateScheduleRequest): Promise<boolean> =>
@@ -360,8 +360,8 @@ export function createScheduleController(
           }),
         rememberProposal,
         (err) => {
-          if (err instanceof ApiError && err.code === 'STALE_VERSION') void load();
-          return { sessionError: describeError(err, 'Failed to update session.') };
+          if (err instanceof ApiError && err.code === 'STALE_VERSION') void load()
+          return { sessionError: describeError(err, 'Failed to update session.') }
         },
       ),
 
@@ -374,56 +374,56 @@ export function createScheduleController(
       ),
 
     confirm(): Promise<boolean> {
-      const proposal = state.proposal;
-      if (proposal === null) return Promise.resolve(false);
+      const proposal = state.proposal
+      if (proposal === null) return Promise.resolve(false)
       return act(
         { pageError: null },
         () => scheduleApi.confirmProposal(proposal.proposalId, { version: proposal.version }),
         () => {
-          rememberProposal(null);
-          void load();
+          rememberProposal(null)
+          void load()
         },
         (err) =>
           err instanceof ApiError && err.conflicts.length > 0
             ? { conflicts: err.conflicts }
             : { pageError: describeError(err, 'Failed to confirm schedule.') },
-      );
+      )
     },
 
     discard(): Promise<boolean> {
-      const proposal = state.proposal;
-      if (proposal === null) return Promise.resolve(false);
+      const proposal = state.proposal
+      if (proposal === null) return Promise.resolve(false)
       return act(
         { pageError: null },
         () => scheduleApi.discardProposal(proposal.proposalId, proposal.version),
         () => rememberProposal(null),
         (err) => ({ pageError: describeError(err, 'Failed to discard proposal.') }),
-      );
+      )
     },
-  };
+  }
 }
 
 export interface ScheduleView {
-  sessions: ScheduleGridSession[];
+  sessions: ScheduleGridSession[]
   /** Full-area spinner: calendar still loading and nothing else to show yet. */
-  showSpinner: boolean;
+  showSpinner: boolean
   /** Small note next to a grid that is still waiting for the calendar or a saved proposal. */
-  pendingNote: string | null;
+  pendingNote: string | null
   /**
    * "No sessions" message: only after the calendar loaded successfully, nothing is scheduled, no saved
    * proposal is still being restored and restoring it did not fail (its ID is kept for a retry).
    */
-  showEmptyState: boolean;
+  showEmptyState: boolean
 }
 
 export function deriveScheduleView(state: ScheduleState): ScheduleView {
-  const committed = state.calendar.status === 'ready' ? state.calendar.sessions : [];
-  const sessions: ScheduleGridSession[] = [...committed, ...(state.proposal?.sessions ?? [])];
-  const loading = state.calendar.status === 'loading';
-  const showSpinner = loading && sessions.length === 0;
-  let pendingNote: string | null = null;
-  if (!showSpinner && loading) pendingNote = 'Loading confirmed sessions...';
-  else if (!showSpinner && state.proposalRestoring) pendingNote = 'Restoring your open proposal...';
+  const committed = state.calendar.status === 'ready' ? state.calendar.sessions : []
+  const sessions: ScheduleGridSession[] = [...committed, ...(state.proposal?.sessions ?? [])]
+  const loading = state.calendar.status === 'loading'
+  const showSpinner = loading && sessions.length === 0
+  let pendingNote: string | null = null
+  if (!showSpinner && loading) pendingNote = 'Loading confirmed sessions...'
+  else if (!showSpinner && state.proposalRestoring) pendingNote = 'Restoring your open proposal...'
   return {
     sessions,
     showSpinner,
@@ -433,5 +433,5 @@ export function deriveScheduleView(state: ScheduleState): ScheduleView {
       sessions.length === 0 &&
       !state.proposalRestoring &&
       state.proposalError === null,
-  };
+  }
 }
