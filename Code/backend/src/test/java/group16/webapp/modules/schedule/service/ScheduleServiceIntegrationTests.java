@@ -33,6 +33,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -106,6 +107,7 @@ class ScheduleServiceIntegrationTests {
         }
 
         @Bean
+        @Primary
         TaskApi taskApi() {
             return new TaskApi() {
                 public List<SchedulableTask> schedulableTasks(Long userId, Collection<Long> acceptedGroupTaskIds) {
@@ -198,10 +200,10 @@ class ScheduleServiceIntegrationTests {
         User user = realUser("Asia/Ho_Chi_Minh");
         ProposalBatchResponse proposal = generate();
         Long sessionId = proposal.sessions().get(0).sessionId();
-        // BASE = 09:00 +07 = 02:00Z. Move to 02:30Z–03:30Z: 09:30–10:30 in Ho Chi Minh City, valid.
+        // BASE = 09:00 +07 = 02:00Z. Move to 02:30Zâ€“03:30Z: 09:30â€“10:30 in Ho Chi Minh City, valid.
         ProposalBatchResponse edited = service.editSession(userId, sessionId, new SessionEditRequest(
                 BASE.plus(Duration.ofMinutes(30)), BASE.plus(Duration.ofMinutes(90)), storedVersion(proposal.proposalId())));
-        // The same instants are 23:30–00:30 in Buenos Aires (UTC-3, no DST).
+        // The same instants are 23:30â€“00:30 in Buenos Aires (UTC-3, no DST).
         changeTimezone(user, "America/Argentina/Buenos_Aires");
 
         AppException ex = assertThrows(AppException.class,
@@ -220,7 +222,7 @@ class ScheduleServiceIntegrationTests {
     void hc04_confirmOfSessionEndingExactlyAtLocalMidnightSucceeds() {
         User user = realUser("Asia/Ho_Chi_Minh");
         ProposalBatchResponse proposal = generate();
-        // Generated session 02:00Z–03:00Z is 23:00–24:00 in Buenos Aires: half-open, so still the same day.
+        // Generated session 02:00Zâ€“03:00Z is 23:00â€“24:00 in Buenos Aires: half-open, so still the same day.
         changeTimezone(user, "America/Argentina/Buenos_Aires");
 
         ProposalBatchResponse confirmed = service.confirmProposal(userId, proposal.proposalId(),
@@ -230,7 +232,7 @@ class ScheduleServiceIntegrationTests {
     }
 
     // Generate -> confirm regression for HC-04. Availability is [02:00Z, 10:00Z) (BASE = 09:00 +07 = 02:00Z), which is
-    // 21:00–05:00 in America/Bogota (UTC-5, no DST); local midnight there is 05:00Z = BASE + 3h.
+    // 21:00â€“05:00 in America/Bogota (UTC-5, no DST); local midnight there is 05:00Z = BASE + 3h.
 
     private ProposalBatchResponse generateAndConfirmInBogota(int taskMinutes) {
         realUser("America/Bogota");
