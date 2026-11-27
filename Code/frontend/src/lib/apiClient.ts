@@ -7,7 +7,8 @@ export interface ConflictErrorDto {
     | 'PAST_TIME'
     | 'DEADLINE_EXCEEDED'
     | 'DURATION_EXCEEDED'
-    | 'TASK_NOT_SCHEDULABLE';
+    | 'TASK_NOT_SCHEDULABLE'
+    | 'INVALID_TIME_RANGE';
   message: string;
 }
 
@@ -26,6 +27,7 @@ const CONFLICT_CODES: ReadonlySet<string> = new Set<ConflictErrorDto['code']>([
   'DEADLINE_EXCEEDED',
   'DURATION_EXCEEDED',
   'TASK_NOT_SCHEDULABLE',
+  'INVALID_TIME_RANGE',
 ]);
 
 function isConflictErrorDto(value: unknown): value is ConflictErrorDto {
