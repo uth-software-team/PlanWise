@@ -6,6 +6,7 @@ import group16.webapp.modules.availability.api.TimeRange;
 import group16.webapp.modules.availability.entity.AvailabilityRuleEntity;
 import group16.webapp.modules.availability.repository.AvailabilityRuleRepository;
 import group16.webapp.modules.availability.service.AvailabilityService;
+import group16.webapp.modules.availability.service.FixedEventService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +30,9 @@ class AvailabilityServiceTests {
     private AvailabilityRuleRepository ruleRepository;
 
     @Mock
+    private FixedEventService fixedEventService;
+
+    @Mock
     private ObjectProvider<UserApi> userApiProvider;
 
     @Mock
@@ -39,7 +43,7 @@ class AvailabilityServiceTests {
     @BeforeEach
     void setUp() {
         lenient().when(userApiProvider.getIfAvailable()).thenReturn(userApi);
-        availabilityService = new AvailabilityService(ruleRepository, userApiProvider);
+        availabilityService = new AvailabilityService(ruleRepository, fixedEventService, userApiProvider);
     }
 
     @Test
