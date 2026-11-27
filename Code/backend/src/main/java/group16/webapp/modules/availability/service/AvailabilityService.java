@@ -26,13 +26,16 @@ import java.util.stream.Collectors;
 public class AvailabilityService implements AvailabilityApi {
 
     private final AvailabilityRuleRepository ruleRepository;
+    private final FixedEventService fixedEventService;
     private final ObjectProvider<UserApi> userApiProvider;
 
     public AvailabilityService(
             AvailabilityRuleRepository ruleRepository,
+            FixedEventService fixedEventService,
             ObjectProvider<UserApi> userApiProvider
     ) {
         this.ruleRepository = ruleRepository;
+        this.fixedEventService = fixedEventService;
         this.userApiProvider = userApiProvider;
     }
 
@@ -104,7 +107,6 @@ public class AvailabilityService implements AvailabilityApi {
                 .collect(Collectors.groupingBy(r -> r.getDayOfWeek().intValue()));
 
         LocalDate firstDate = LocalDate.ofInstant(start, userZone);
-        // Subtract 1 nanosecond so an end exactly at local midnight does not unnecessarily include the next date
         LocalDate lastDate = LocalDate.ofInstant(end.minusNanos(1), userZone);
 
         List<TimeRange> rawRanges = new ArrayList<>();
@@ -132,8 +134,7 @@ public class AvailabilityService implements AvailabilityApi {
     @Override
     @Transactional(readOnly = true)
     public List<TimeRange> fixedEventOccurrences(Long userId, Instant start, Instant end) {
-        // Implemented in AV-03
-        return List.of();
+        return fixedEventService.expandMergedOccurrences(userId, start, end);
     }
 
     private void validateTimeRange(LocalTime startTime, LocalTime endTime) {

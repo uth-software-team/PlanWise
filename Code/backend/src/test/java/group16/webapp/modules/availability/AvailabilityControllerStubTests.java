@@ -18,8 +18,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * TK-01 contract: remaining fixed-event and calendar stubs answer 501, validate their input and are
- * documented in OpenAPI.
+ * Contract tests for availability, fixed-event and calendar endpoints (401, 400 validation, and OpenAPI schemas).
  */
 class AvailabilityControllerStubTests extends AuthenticatedMvcTest {
 
@@ -39,15 +38,6 @@ class AvailabilityControllerStubTests extends AuthenticatedMvcTest {
                 Arguments.of(HttpMethod.PUT, "/v1/fixed-events/1", WEEKLY),
                 Arguments.of(HttpMethod.DELETE, "/v1/fixed-events/1", null),
                 Arguments.of(HttpMethod.GET, CALENDAR, null));
-    }
-
-    @ParameterizedTest(name = "{0} {1}")
-    @MethodSource("endpoints")
-    void authenticatedValidCallReturns501(HttpMethod method, String uri, String body) throws Exception {
-        callAuthenticated(method, uri, body)
-                .andExpect(status().isNotImplemented())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
     }
 
     @ParameterizedTest(name = "{0} {1}")
