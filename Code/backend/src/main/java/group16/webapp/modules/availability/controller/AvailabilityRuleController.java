@@ -1,10 +1,10 @@
 package group16.webapp.modules.availability.controller;
 
 import group16.webapp.common.dto.ApiResponse;
-import group16.webapp.common.exception.AppException;
-import group16.webapp.common.exception.ErrorCode;
+import group16.webapp.common.util.SecurityUtils;
 import group16.webapp.modules.availability.dto.AvailabilityRuleRequest;
 import group16.webapp.modules.availability.dto.AvailabilityRuleResponse;
+import group16.webapp.modules.availability.service.AvailabilityService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -20,37 +20,42 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * UC-07 weekly availability rules. Contract stubs (TK-01): every method answers 501 NOT_IMPLEMENTED until AV-02.
- * Planned: owner-only (another user's rule is 404); startTime &gt;= endTime is 400 INVALID_TIME_RANGE.
+ * UC-07 weekly availability rules (AV-02).
  */
 @RestController
 @RequestMapping("/v1/availability-rules")
 public class AvailabilityRuleController {
 
+    private final AvailabilityService availabilityService;
+
+    public AvailabilityRuleController(AvailabilityService availabilityService) {
+        this.availabilityService = availabilityService;
+    }
+
     @GetMapping
     public ApiResponse<List<AvailabilityRuleResponse>> listRules() {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(availabilityService.listRules(userId));
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<AvailabilityRuleResponse> createRule(@Valid @RequestBody AvailabilityRuleRequest request) {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(availabilityService.createRule(userId, request));
     }
 
     @PutMapping("/{id}")
     public ApiResponse<AvailabilityRuleResponse> updateRule(@PathVariable Long id,
                                                            @Valid @RequestBody AvailabilityRuleRequest request) {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(availabilityService.updateRule(userId, id, request));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteRule(@PathVariable Long id) {
-        throw notImplemented();
-    }
-
-    private static AppException notImplemented() {
-        return new AppException(ErrorCode.NOT_IMPLEMENTED);
+        Long userId = SecurityUtils.requireCurrentUserId();
+        availabilityService.deleteRule(userId, id);
     }
 }
