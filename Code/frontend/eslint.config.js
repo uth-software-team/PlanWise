@@ -1,4 +1,4 @@
-import js from '@eslint/js'
+﻿import js from '@eslint/js'
 import prettier from 'eslint-config-prettier'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
@@ -17,9 +17,11 @@ export default defineConfig([
       reactRefresh.configs.vite,
     ],
     languageOptions: {
+      ecmaVersion: 2022,
       globals: globals.browser,
     },
     rules: {
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/no-explicit-any': 'error',
     },
   },

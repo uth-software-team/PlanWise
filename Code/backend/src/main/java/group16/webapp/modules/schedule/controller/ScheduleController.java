@@ -3,10 +3,12 @@ package group16.webapp.modules.schedule.controller;
 import group16.webapp.common.dto.ApiResponse;
 import group16.webapp.common.exception.AppException;
 import group16.webapp.common.exception.ErrorCode;
+import group16.webapp.common.util.SecurityUtils;
 import group16.webapp.modules.schedule.dto.ConfirmRequest;
 import group16.webapp.modules.schedule.dto.GenerateScheduleRequest;
 import group16.webapp.modules.schedule.dto.ProposalBatchResponse;
 import group16.webapp.modules.schedule.dto.SessionEditRequest;
+import group16.webapp.modules.schedule.service.ScheduleService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -25,23 +27,18 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.Instant;
 
 /**
- * UC-01 / UC-04 smart scheduling (CG-07). Contract stubs (SC-01): valid authenticated requests answer 501
- * NOT_IMPLEMENTED until SC-05a (generate), SC-06 (get, discard, edit and delete sessions) and SC-07 (confirm)
- * implement them. Request validation already runs: malformed or missing input is 400 INVALID_INPUT and an empty or
- * reversed time range is 400 INVALID_TIME_RANGE.
- *
- * <p>Requirements for the implementations:
- * <ul>
- *   <li>The user is always the authenticated caller; requests carry no user id.</li>
- *   <li>Owner scope: a proposal or session of another user is 404 RESOURCE_NOT_FOUND, never 403.</li>
- *   <li>Every mutation sends the <b>batch</b> version; a mismatch is 409 STALE_VERSION, and each successful edit
- *   increments the batch version (BR-10, BR-11).</li>
- *   <li>Only PROPOSED batches and sessions can be changed; CONFIRMED/COMPLETED sessions are never touched.</li>
- * </ul>
+ * UC-01 / UC-04 smart scheduling (CG-07): SC-05a (generate), SC-06 (get, discard, edit and delete sessions)
+ * and SC-07 (confirm).
  */
 @RestController
 @RequestMapping("/v1/schedules")
 public class ScheduleController {
+
+    private final ScheduleService scheduleService;
+
+    public ScheduleController(ScheduleService scheduleService) {
+        this.scheduleService = scheduleService;
+    }
 
     /**
      * Creates the caller's new PROPOSED batch (replacing any previous PROPOSED batch) and returns it with the
@@ -50,13 +47,15 @@ public class ScheduleController {
     @PostMapping("/generate")
     public ApiResponse<ProposalBatchResponse> generate(@Valid @RequestBody GenerateScheduleRequest request) {
         requireOrderedRange(request.windowStart(), request.windowEnd());
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(scheduleService.generateProposal(userId, request));
     }
 
     /** One of the caller's batches. */
     @GetMapping("/proposals/{proposalId}")
     public ApiResponse<ProposalBatchResponse> getProposal(@PathVariable Long proposalId) {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(scheduleService.getProposalById(userId, proposalId));
     }
 
     /** Discards the caller's PROPOSED batch ({@code version} = batch version); confirmed sessions are kept. */
@@ -65,7 +64,8 @@ public class ScheduleController {
     public void discardProposal(
             @PathVariable Long proposalId,
             @RequestParam @NotNull @PositiveOrZero Integer version) {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        scheduleService.discardProposal(userId, proposalId, version);
     }
 
     /** Moves one PROPOSED session of the caller; HC-01..09 are checked and the updated batch is returned. */
@@ -73,7 +73,8 @@ public class ScheduleController {
     public ApiResponse<ProposalBatchResponse> editSession(
             @PathVariable Long id, @Valid @RequestBody SessionEditRequest request) {
         requireOrderedRange(request.startAt(), request.endAt());
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(scheduleService.editSession(userId, id, request));
     }
 
     /** Removes one PROPOSED session of the caller ({@code version} = batch version) and returns the updated batch. */
@@ -81,7 +82,8 @@ public class ScheduleController {
     public ApiResponse<ProposalBatchResponse> deleteSession(
             @PathVariable Long id,
             @RequestParam @NotNull @PositiveOrZero Integer version) {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(scheduleService.deleteSession(userId, id, version));
     }
 
     /**
@@ -91,7 +93,8 @@ public class ScheduleController {
     @PostMapping("/{proposalId}/confirm")
     public ApiResponse<ProposalBatchResponse> confirm(
             @PathVariable Long proposalId, @Valid @RequestBody ConfirmRequest request) {
-        throw notImplemented();
+        Long userId = SecurityUtils.requireCurrentUserId();
+        return ApiResponse.ok(scheduleService.confirmProposal(userId, proposalId, request));
     }
 
     /** Present and well-formed, but empty or reversed: half-open ranges need {@code start < end}. */
@@ -99,9 +102,5 @@ public class ScheduleController {
         if (!start.isBefore(end)) {
             throw new AppException(ErrorCode.INVALID_TIME_RANGE);
         }
-    }
-
-    private static AppException notImplemented() {
-        return new AppException(ErrorCode.NOT_IMPLEMENTED);
     }
 }

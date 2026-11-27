@@ -42,15 +42,6 @@ class ScheduleControllerStubTests extends AuthenticatedMvcTest {
 
 	@ParameterizedTest(name = "{0} {1} {2}")
 	@MethodSource("endpoints")
-	void authenticatedValidCallReturns501(HttpMethod method, String uri, String body) throws Exception {
-		callAuthenticated(method, uri, body)
-				.andExpect(status().isNotImplemented())
-				.andExpect(jsonPath("$.success").value(false))
-				.andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
-	}
-
-	@ParameterizedTest(name = "{0} {1} {2}")
-	@MethodSource("endpoints")
 	void anonymousCallReturns401(HttpMethod method, String uri, String body) throws Exception {
 		callAnonymous(method, uri, body)
 				.andExpect(status().isUnauthorized())

@@ -1,12 +1,19 @@
+import type { ReactNode } from 'react'
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 
 import { AppLayout } from '@/app/layouts/AppLayout'
 import { AuthLayout } from '@/app/layouts/AuthLayout'
 import { APP_PAGES, DEFAULT_APP_PATH } from '@/app/nav'
+import { SchedulePage } from '@/features/schedule/components/SchedulePage'
 import { NotFoundPage } from '@/routes/NotFoundPage'
 import { PlaceholderPage } from '@/routes/PlaceholderPage'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { PublicOnlyRoute } from '@/routes/PublicOnlyRoute'
+
+/** Feature pages that replace a placeholder; paths stay those of APP_PAGES (FE-01 rule). */
+const FEATURE_PAGES: Partial<Record<string, ReactNode>> = {
+  '/schedule': <SchedulePage />,
+}
 
 export const router = createBrowserRouter([
   {
@@ -50,7 +57,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to={DEFAULT_APP_PATH} replace /> },
           ...APP_PAGES.map((item) => ({
             path: item.path,
-            element: (
+            element: FEATURE_PAGES[item.path] ?? (
               <PlaceholderPage
                 eyebrow="Không gian cá nhân"
                 title={item.label}

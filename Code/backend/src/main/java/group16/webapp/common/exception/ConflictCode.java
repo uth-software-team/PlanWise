@@ -19,5 +19,11 @@ public enum ConflictCode {
     /** HC-07: planned duration exceeds the remaining duration. */
     DURATION_EXCEEDED,
     /** HC-08: task is not TODO/IN_PROGRESS of the user or an ACCEPTED assignment. */
-    TASK_NOT_SCHEDULABLE
+    TASK_NOT_SCHEDULABLE,
+    /**
+     * HC-04 at confirm: the stored session is not within one calendar day of the user's current timezone
+     * (e.g. the timezone changed after the edit). Approved by TV1 as a ConflictCode so confirm stays 409 (BR-11);
+     * a bad range in an edit request is still the request-level {@link ErrorCode#INVALID_TIME_RANGE} (400).
+     */
+    INVALID_TIME_RANGE
 }

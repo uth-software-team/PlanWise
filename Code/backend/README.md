@@ -228,7 +228,7 @@ Tên mã lỗi theo hợp đồng API trong tài liệu thiết kế:
 Mọi mã lỗi dùng cho MVP đã được khai báo sẵn trong `ErrorCode` — module **không cần sửa** file này. Cần mã mới thì mở PR riêng cho TV1 review.
 
 #### Lỗi theo từng phiên lịch (`ConflictCode`)
-Vi phạm trên một phiên cụ thể **không phải** `ErrorCode` mà là `ConflictCode` (`SESSION_OVERLAP`, `FIXED_EVENT_OVERLAP`, `OUTSIDE_AVAILABILITY`, `DEADLINE_EXCEEDED`, `PAST_TIME`, `DURATION_EXCEEDED`, `TASK_NOT_SCHEDULABLE`), trả trong `conflicts[]` của 409 `CONSTRAINT_VIOLATION`:
+Vi phạm trên một phiên cụ thể **không phải** `ErrorCode` mà là `ConflictCode` (`SESSION_OVERLAP`, `FIXED_EVENT_OVERLAP`, `OUTSIDE_AVAILABILITY`, `DEADLINE_EXCEEDED`, `PAST_TIME`, `DURATION_EXCEEDED`, `TASK_NOT_SCHEDULABLE`, `INVALID_TIME_RANGE` — HC-04 khi confirm, TV1 duyệt 2026-11-27), trả trong `conflicts[]` của 409 `CONSTRAINT_VIOLATION`:
 
 ```java
 throw AppException.conflicts(List.of(
