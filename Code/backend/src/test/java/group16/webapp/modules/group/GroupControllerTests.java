@@ -444,7 +444,7 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 	}
 
 	@Test
-	void ordinaryLeaderCanPromoteButNotDemotePeers() throws Exception {
+	void ordinaryLeaderPromotesAndDemotesPeersIncludingCreator() throws Exception {
 		User creator = newUser("creator@example.com");
 		User ordinary = caller();
 		TeamGroup group = seedGroup(creator, "Team");
@@ -454,15 +454,19 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 
 		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("LEADER")).andExpect(status().isOk());
 
-		GroupSnapshot creatorBefore = snapshot(row(group, creator));
-		GroupSnapshot peerBefore = snapshot(row(group, member));
 		callAuthenticated(HttpMethod.PATCH, memberUri(group, creator), roleBody("MEMBER"))
-				.andExpect(status().isForbidden())
-				.andExpect(jsonPath("$.code").value("FORBIDDEN"));
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.role").value("MEMBER"));
 		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("MEMBER"))
-				.andExpect(status().isForbidden());
-		assertThat(snapshot(row(group, creator))).isEqualTo(creatorBefore);
-		assertThat(snapshot(row(group, member))).isEqualTo(peerBefore);
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.role").value("MEMBER"));
+
+		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(group, member).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row(group, ordinary).getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
+				.isEqualTo(creator.getId());
 	}
 
 	@Test
@@ -480,7 +484,7 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 	}
 
 	@Test
-	void creatorSelfDemotionKeepsCreatedByAndRemainingLeaderGetsNoCreatorAuthority() throws Exception {
+	void creatorSelfDemotionKeepsCreatedByAndRemainingLeadersManagePeers() throws Exception {
 		User creator = caller();
 		TeamGroup group = seedGroup(creator, "Team");
 		User leader2 = newUser("leader2@example.com");
@@ -495,15 +499,13 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.MEMBER);
 		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
 				.isEqualTo(creator.getId());
-		// Remaining leaders still manage members, but cannot demote or remove each other.
-		GroupSnapshot before = snapshot(row(group, leader3));
+		// The remaining (non-creator) leaders demote each other like any peer, while another leader remains.
 		callAs(leader2, HttpMethod.PATCH, memberUri(group, leader3), roleBody("MEMBER"))
-				.andExpect(status().isForbidden());
-		callAs(leader2, HttpMethod.DELETE, memberUri(group, leader3), null).andExpect(status().isForbidden());
-		assertThat(snapshot(row(group, leader3))).isEqualTo(before);
-		callAs(leader2, HttpMethod.PATCH, memberUri(group, creator), roleBody("LEADER")).andExpect(status().isOk());
-		// The creator demoted themselves and was promoted again: the authority is theirs once more (both conditions).
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, leader3), roleBody("MEMBER")).andExpect(status().isOk());
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.role").value("MEMBER"));
+		assertThat(row(group, leader3).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row(group, leader3).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(group, leader2).getRole()).isEqualTo(GroupRole.LEADER);
 	}
 
 	@Test
@@ -615,30 +617,30 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 	}
 
 	@Test
-	void creatorRemovesAnotherLeaderButOrdinaryLeaderCannotRemoveCreatorOrPeer() throws Exception {
+	void ordinaryLeaderRemovesCreatorAndPeerLeader() throws Exception {
 		User creator = newUser("creator@example.com");
 		User ordinary = caller();
 		TeamGroup group = seedGroup(creator, "Team");
 		addMember(group, ordinary, GroupRole.LEADER);
 		User peer = newUser("peer@example.com");
 		addMember(group, peer, GroupRole.LEADER);
-		GroupSnapshot creatorBefore = snapshot(row(group, creator));
-		GroupSnapshot peerBefore = snapshot(row(group, peer));
 
-		callAuthenticated(HttpMethod.DELETE, memberUri(group, creator), null)
-				.andExpect(status().isForbidden())
-				.andExpect(jsonPath("$.code").value("FORBIDDEN"));
-		callAuthenticated(HttpMethod.DELETE, memberUri(group, peer), null).andExpect(status().isForbidden());
-		assertThat(snapshot(row(group, creator))).isEqualTo(creatorBefore);
-		assertThat(snapshot(row(group, peer))).isEqualTo(peerBefore);
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, creator), null).andExpect(status().isNoContent());
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, peer), null).andExpect(status().isNoContent());
 
-		callAs(creator, HttpMethod.DELETE, memberUri(group, peer), null).andExpect(status().isNoContent());
+		// Rows are kept: INACTIVE with the former role; the caller remains the only ACTIVE LEADER.
+		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.LEADER);
 		assertThat(row(group, peer).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
 		assertThat(row(group, peer).getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(row(group, ordinary).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(group, ordinary).getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
+				.isEqualTo(creator.getId());
 	}
 
 	@Test
-	void creatorSelfLeaveKeepsCreatedByAndRemainingLeaderGetsNoCreatorAuthority() throws Exception {
+	void creatorSelfLeaveKeepsCreatedByAndRemainingLeaderRemovesPeerLeader() throws Exception {
 		User creator = caller();
 		TeamGroup group = seedGroup(creator, "Team");
 		User leader2 = newUser("leader2@example.com");
@@ -655,9 +657,11 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
 				.isEqualTo(creator.getId());
 		callAs(leader2, HttpMethod.DELETE, memberUri(group, member), null).andExpect(status().isNoContent());
-		GroupSnapshot before = snapshot(row(group, leader3));
-		callAs(leader2, HttpMethod.DELETE, memberUri(group, leader3), null).andExpect(status().isForbidden());
-		assertThat(snapshot(row(group, leader3))).isEqualTo(before);
+		callAs(leader2, HttpMethod.DELETE, memberUri(group, leader3), null).andExpect(status().isNoContent());
+		assertThat(row(group, leader3).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, leader3).getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(row(group, leader2).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(group, leader2).getRole()).isEqualTo(GroupRole.LEADER);
 	}
 
 	@Test

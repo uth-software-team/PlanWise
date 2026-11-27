@@ -3,7 +3,7 @@
 General rules (approval workflow, git, security, source of truth) are in the root `CLAUDE.md`. This file adds frontend rules.
 
 ## Status
-**Scaffolded (FE-00) + router/layout/auth guard (FE-01).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router. OpenAPI type generation and API client come in FE-02.
+**Scaffolded (FE-00) + router/layout/auth guard (FE-01) + API client, 401 handling and OpenAPI types (FE-02).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router.
 Base UI on the approved API contract, not guesses.
 
 ## Runtime
@@ -16,8 +16,8 @@ Don't add other UI/state libraries without approval.
 
 ## Direct dependencies (keep in sync with package.json)
 - Runtime: `react`, `react-dom`, `react-router-dom`, `class-variance-authority`, `lucide-react`, `cn` (pinned 0.5.2), `radix-ui` (pinned 1.8.1).
-- Dev: `vite`, `@vitejs/plugin-react`, `typescript`, `@types/react`, `@types/react-dom`, `@types/node`, `tailwindcss`, `@tailwindcss/vite`, `tw-animate-css`, `eslint`, `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `globals`, `prettier`, `eslint-config-prettier`.
-- Deferred: `openapi-typescript` (FE-02).
+- Dev: `vite`, `@vitejs/plugin-react`, `typescript`, `@types/react`, `@types/react-dom`, `@types/node`, `tailwindcss`, `@tailwindcss/vite`, `tw-animate-css`, `eslint`, `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `globals`, `prettier`, `eslint-config-prettier`, `openapi-typescript` (pinned 7.13.0).
+- `openapi-typescript` 7.13.0 declares peer `typescript ^5.x`; `overrides` in `package.json` makes it use the project's TypeScript 6 (approved by TV1 for FE-02). Re-check `npm run gen:api` + `npm run build` when bumping either.
 
 ## Import conventions
 - Class names: `import { cn, type ClassValue } from '@/lib/utils'` (re-exports the `cn` package). Don't import `clsx` or `tailwind-merge` directly.
@@ -32,6 +32,13 @@ Don't add other UI/state libraries without approval.
 - Lint: `npm run lint` (ESLint)
 - Format: `npm run format` / `npm run format:check` (Prettier)
 - Add shadcn component: `npx shadcn@4.23.0 add <name>`
+- API types: `npm run gen:api` regenerates `src/api/schema.d.ts` from `docs/api/openapi-v1.json` (generated, committed, ignored by ESLint/Prettier; never edit by hand). Response schemas in the snapshot have no `required`, so response fields are optional in these types.
+- API client checks: `npm run check:api-client` (T1–T9, fake fetch, no backend); `npm run check:api-client -- --base http://localhost:5173/api/v1` with `PLANWISE_CHECK_TOKEN` + `PLANWISE_CHECK_EMAIL` runs I2–I3 against a running backend.
+
+## API client (FE-02)
+- `src/lib/apiClient.ts`: `apiRequest<T>(path, init)` with base `VITE_API_BASE_URL` (default `/api/v1`); unwraps `ApiResponse.data`, throws `ApiError{status, code, conflicts}`.
+- Dev proxy (`vite.config.ts`): `/api` → `http://localhost:8080`, path kept (`/api/v1/...`), so the default base works with `npm run dev`.
+- A 401 for the token the request sent clears the session (`clearToken()`), checked before the body is read; the guards then go to `/login?redirect=<path>`. A late 401 for a replaced token is ignored; 403 keeps the session.
 
 ## Routes & auth guard (FE-01)
 - Router: `src/app/router.tsx` (`createBrowserRouter`). Menu config: `src/app/nav.ts`. Layouts: `src/app/layouts/`. Guards and generic pages: `src/routes/`.
@@ -39,7 +46,7 @@ Don't add other UI/state libraries without approval.
 - Protected (no token → `/login?redirect=<path>`): `/` → `/tasks` (default), `/overview`, `/tasks`, `/schedule`, `/groups`, `/ai`, `/notifications`, `/settings`.
 - `/overview` and `/notifications` are P1 placeholders: their routes exist but they are hidden from MVP navigation (`inNav: false` in `nav.ts`), and the header has no notification bell. Routes come from `APP_PAGES`; the sidebar uses `MAIN_NAV`/`SECONDARY_NAV` (only `inNav: true`). Never build routes from the nav lists.
 - `*` → 404 page.
-- Token (CG-04): `src/lib/auth-token.ts`, key `planwise.accessToken` in `localStorage`. Always change it via `setToken`/`clearToken`; guards use `useHasToken()` and react to changes in this tab and other tabs (`storage` event). Guard checks presence only; expiry/401 handling comes in FE-02. Logout = `clearToken()` + go to `/login`.
+- Token (CG-04): `src/lib/auth-token.ts`, key `planwise.accessToken` in `localStorage`. Always change it via `setToken`/`clearToken`; guards use `useHasToken()` and react to changes in this tab and other tabs (`storage` event). Guard checks presence only; an expired or invalid token is cleared by the API client on its first 401 (FE-02). It is the only token store: `apiClient` reads it through `getAuthToken`/`setAuthToken`. The old key `planwise_token` is deleted and never read. Logout = `clearToken()` + go to `/login`.
 - Feature tasks replace a placeholder by pointing its route at `features/<module>` pages; keep paths stable.
 
 ## Design & accessibility
