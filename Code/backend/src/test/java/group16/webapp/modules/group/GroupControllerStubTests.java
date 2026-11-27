@@ -15,9 +15,9 @@ import org.springframework.http.HttpMethod;
 import java.util.stream.Stream;
 
 /**
- * GR-01 contract: availability (GR-04) is the only stub left and answers 501, every group endpoint needs a token,
- * validates its input and is documented in OpenAPI. Group CRUD and member behavior (GR-02, GR-03) are covered by
- * GroupControllerTests.
+ * GR-01 contract: every group endpoint needs a token, validates its input and is documented in OpenAPI. Group CRUD
+ * and member behavior (GR-02, GR-03) are covered by GroupControllerTests, availability (GR-04) by
+ * GroupAvailabilityControllerTests and GroupAvailabilityServiceImplTest.
  */
 class GroupControllerStubTests extends AuthenticatedMvcTest {
 
@@ -40,24 +40,15 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 				Arguments.of(HttpMethod.DELETE, "/v1/groups/1/members/2", null));
 	}
 
-	/** The only endpoint still stubbed (GR-04). */
-	static Stream<Arguments> stubEndpoints() {
+	/** Availability endpoint implemented in GR-04 (behavior covered by GroupAvailabilityControllerTests). */
+	static Stream<Arguments> availabilityEndpoints() {
 		return Stream.of(
 				Arguments.of(HttpMethod.GET,
 						"/v1/groups/1/availability?start=2026-11-23T00:00:00Z&end=2026-11-30T00:00:00Z", null));
 	}
 
 	static Stream<Arguments> allEndpoints() {
-		return Stream.of(crudEndpoints(), memberEndpoints(), stubEndpoints()).flatMap(s -> s);
-	}
-
-	@ParameterizedTest(name = "{0} {1}")
-	@MethodSource("stubEndpoints")
-	void authenticatedValidCallReturns501(HttpMethod method, String uri, String body) throws Exception {
-		callAuthenticated(method, uri, body)
-				.andExpect(status().isNotImplemented())
-				.andExpect(jsonPath("$.success").value(false))
-				.andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
+		return Stream.of(crudEndpoints(), memberEndpoints(), availabilityEndpoints()).flatMap(s -> s);
 	}
 
 	@ParameterizedTest(name = "{0} {1}")

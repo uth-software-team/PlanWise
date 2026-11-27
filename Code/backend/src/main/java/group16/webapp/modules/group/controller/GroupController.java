@@ -1,8 +1,6 @@
 package group16.webapp.modules.group.controller;
 
 import group16.webapp.common.dto.ApiResponse;
-import group16.webapp.common.exception.AppException;
-import group16.webapp.common.exception.ErrorCode;
 import group16.webapp.common.util.SecurityUtils;
 import group16.webapp.modules.group.dto.GroupAvailabilityResponse;
 import group16.webapp.modules.group.dto.GroupRequest;
@@ -11,6 +9,7 @@ import group16.webapp.modules.group.dto.GroupSummaryResponse;
 import group16.webapp.modules.group.dto.MemberAddRequest;
 import group16.webapp.modules.group.dto.MemberResponse;
 import group16.webapp.modules.group.dto.RoleUpdateRequest;
+import group16.webapp.modules.group.service.GroupAvailabilityService;
 import group16.webapp.modules.group.service.GroupService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -31,18 +30,20 @@ import java.util.List;
 
 /**
  * UC-09 groups and members, plus the CG-11 availability endpoint. Group CRUD (GR-02) and member management (GR-03)
- * are implemented; availability (GR-04) is still a contract stub that answers 501 NOT_IMPLEMENTED.
- * Errors: 404 missing group or target, 403 insufficient membership or role, 409 DATA_CONFLICT for a duplicate
- * member or when the last leader would leave or be demoted.
+ * and availability (GR-04) are implemented. Errors: 404 missing group or target, 403 insufficient membership or role,
+ * 409 DATA_CONFLICT for a duplicate member or when the last leader would leave or be demoted; availability adds
+ * 400 INVALID_TIME_RANGE and 501 NOT_IMPLEMENTED while no calendar provider (CAL-01) exists.
  */
 @RestController
 @RequestMapping("/v1/groups")
 public class GroupController {
 
     private final GroupService groupService;
+    private final GroupAvailabilityService availabilityService;
 
-    public GroupController(GroupService groupService) {
+    public GroupController(GroupService groupService, GroupAvailabilityService availabilityService) {
         this.groupService = groupService;
+        this.availabilityService = availabilityService;
     }
 
     /** Groups the caller is an ACTIVE member of. */
@@ -92,15 +93,12 @@ public class GroupController {
         groupService.removeMember(SecurityUtils.requireCurrentUserId(), id, userId);
     }
 
-    /** CG-11: ACTIVE members see member ids and BUSY intervals only. */
+    /** CG-11: ACTIVE members see member ids and BUSY intervals only, within the half-open window [start, end). */
     @GetMapping("/{id}/availability")
     public ApiResponse<GroupAvailabilityResponse> getAvailability(@PathVariable Long id,
                                                                   @RequestParam Instant start,
                                                                   @RequestParam Instant end) {
-        throw notImplemented();
-    }
-
-    private static AppException notImplemented() {
-        return new AppException(ErrorCode.NOT_IMPLEMENTED);
+        return ApiResponse.ok(
+                availabilityService.getAvailability(SecurityUtils.requireCurrentUserId(), id, start, end));
     }
 }
