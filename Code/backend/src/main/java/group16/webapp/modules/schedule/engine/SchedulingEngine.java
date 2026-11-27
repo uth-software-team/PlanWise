@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -23,6 +24,7 @@ import java.util.TreeMap;
  *   <li>The session is placed in the earliest free slot that fits the whole remaining duration before the
  *       deadline; otherwise the task is reported as {@code INSUFFICIENT_TIME}.</li>
  *   <li>Intervals are half-open {@code [start, end)}, so adjacent sessions do not overlap.</li>
+ *   <li>HC-04: no session crosses a local midnight of the user's timezone; ending exactly at it is allowed.</li>
  * </ul>
  */
 @Component
@@ -36,6 +38,7 @@ public class SchedulingEngine {
             List<SchedulableTask> tasks,
             Map<Long, Integer> remainingMinutesByTask,
             List<TimeRange> freeSlots,
+            ZoneId userZone,
             Instant now
     ) {
         Comparator<SchedulableTask> order = Comparator
@@ -47,12 +50,14 @@ public class SchedulingEngine {
         List<SchedulableTask> sorted = new ArrayList<>(tasks);
         sorted.sort(order);
 
-        // Free time pool: start -> end, never in the past.
+        // Free time pool: start -> end, never in the past. Split at local midnights AFTER the final merge (HC-04),
+        // so every piece, and therefore every session placed in it, stays within one local day.
         NavigableMap<Instant, Instant> pool = new TreeMap<>();
         for (TimeRange slot : SlotCalculator.mergeOverlapping(freeSlots == null ? List.of() : freeSlots)) {
             Instant effectiveStart = slot.start().isBefore(now) ? now : slot.start();
-            if (effectiveStart.isBefore(slot.end())) {
-                pool.put(effectiveStart, slot.end());
+            if (!effectiveStart.isBefore(slot.end())) continue;
+            for (TimeRange piece : SlotCalculator.splitAtLocalMidnights(new TimeRange(effectiveStart, slot.end()), userZone)) {
+                pool.put(piece.start(), piece.end());
             }
         }
 

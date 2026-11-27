@@ -18,6 +18,7 @@ import group16.webapp.modules.schedule.dto.ConfirmRequest;
 import group16.webapp.modules.schedule.dto.GenerateScheduleRequest;
 import group16.webapp.modules.schedule.dto.ProposalBatchResponse;
 import group16.webapp.modules.schedule.dto.SessionEditRequest;
+import group16.webapp.modules.schedule.engine.SlotCalculator;
 import group16.webapp.modules.schedule.repository.ScheduleProposalRepository;
 import group16.webapp.modules.schedule.repository.ScheduleSessionRepository;
 import group16.webapp.modules.task.api.NewGroupTaskCommand;
@@ -221,6 +222,42 @@ class ScheduleServiceIntegrationTests {
                 new ConfirmRequest(storedVersion(proposal.proposalId())));
 
         assertEquals(ProposalStatus.CONFIRMED, confirmed.status());
+    }
+
+    // Generate -> confirm regression for HC-04. Availability is [02:00Z, 10:00Z) (BASE = 09:00 +07 = 02:00Z), which is
+    // 21:00–05:00 in America/Bogota (UTC-5, no DST); local midnight there is 05:00Z = BASE + 3h.
+
+    private ProposalBatchResponse generateAndConfirmInBogota(int taskMinutes) {
+        realUser("America/Bogota");
+        TASKS.clear();
+        TASKS.add(new SchedulableTask(TASK_ID, BASE.plus(Duration.ofDays(7)), TaskPriority.HIGH, taskMinutes,
+                BASE.minus(Duration.ofDays(3))));
+        ProposalBatchResponse proposal = generate();
+        assertEquals(1, proposal.sessions().size(), "task must be scheduled");
+        var session = proposal.sessions().get(0);
+        assertTrue(SlotCalculator.isWithinOneLocalDay(session.startAt(), session.endAt(), ZoneId.of("America/Bogota")));
+
+        ProposalBatchResponse confirmed = service.confirmProposal(userId, proposal.proposalId(),
+                new ConfirmRequest(storedVersion(proposal.proposalId())));
+        assertEquals(ProposalStatus.CONFIRMED, confirmed.status());
+        return confirmed;
+    }
+
+    @Test
+    void hc04_generatedSessionEndingExactlyAtLocalMidnightConfirms() {
+        var session = generateAndConfirmInBogota(180).sessions().get(0);
+
+        assertEquals(BASE, session.startAt());
+        assertEquals(BASE.plus(Duration.ofHours(3)), session.endAt()); // 00:00 Bogota
+    }
+
+    @Test
+    void hc04_taskTooLongBeforeMidnightMovesToNextLocalDayAndConfirms() {
+        // 240 min does not fit in the 180 min before midnight, so it starts at 00:00 Bogota instead of crossing it.
+        var session = generateAndConfirmInBogota(240).sessions().get(0);
+
+        assertEquals(BASE.plus(Duration.ofHours(3)), session.startAt());
+        assertEquals(BASE.plus(Duration.ofHours(7)), session.endAt());
     }
 
     @Test

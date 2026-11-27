@@ -136,6 +136,42 @@ class SlotCalculatorTest {
     }
 
     @Test
+    void splitAtLocalMidnights_splitsOnlyAtLocalMidnight() {
+        // 22:00–02:00 in +07 = 15:00Z–19:00Z; midnight = 17:00Z.
+        assertEquals(List.of(r("15:00", "17:00"), r("17:00", "19:00")),
+                SlotCalculator.splitAtLocalMidnights(r("15:00", "19:00"), VN));
+        // Same instants in UTC stay one piece.
+        assertEquals(List.of(r("15:00", "19:00")), SlotCalculator.splitAtLocalMidnights(r("15:00", "19:00"), ZoneOffset.UTC));
+        // Ending exactly at local midnight is not split.
+        assertEquals(List.of(r("10:00", "17:00")), SlotCalculator.splitAtLocalMidnights(r("10:00", "17:00"), VN));
+    }
+
+    @Test
+    void splitAtLocalMidnights_multiDayRangeGivesOnePiecePerDay() {
+        var pieces = SlotCalculator.splitAtLocalMidnights(
+                new TimeRange(Instant.parse("2026-11-30T12:00:00Z"), Instant.parse("2026-12-02T12:00:00Z")), ZoneOffset.UTC);
+        assertEquals(List.of(
+                new TimeRange(Instant.parse("2026-11-30T12:00:00Z"), Instant.parse("2026-12-01T00:00:00Z")),
+                new TimeRange(Instant.parse("2026-12-01T00:00:00Z"), Instant.parse("2026-12-02T00:00:00Z")),
+                new TimeRange(Instant.parse("2026-12-02T00:00:00Z"), Instant.parse("2026-12-02T12:00:00Z"))), pieces);
+    }
+
+    @Test
+    void splitAtLocalMidnights_everyPieceSatisfiesTheEditConfirmRule() {
+        var range = new TimeRange(Instant.parse("2026-10-30T18:00:00Z"), Instant.parse("2026-11-04T06:00:00Z"));
+        for (ZoneId zone : List.of(ZoneOffset.UTC, VN, ZoneId.of("America/New_York"))) {
+            var pieces = SlotCalculator.splitAtLocalMidnights(range, zone);
+            assertEquals(range.start(), pieces.get(0).start(), zone.toString());
+            assertEquals(range.end(), pieces.get(pieces.size() - 1).end(), zone.toString());
+            for (int i = 0; i < pieces.size(); i++) {
+                var p = pieces.get(i);
+                assertTrue(SlotCalculator.isWithinOneLocalDay(p.start(), p.end(), zone), zone + " " + p);
+                if (i > 0) assertEquals(pieces.get(i - 1).end(), p.start(), "contiguous in " + zone);
+            }
+        }
+    }
+
+    @Test
     void overlapsAny_isHalfOpen() {
         var others = List.of(r("10:00", "11:00"));
         assertFalse(SlotCalculator.overlapsAny(r("09:00", "10:00"), others));

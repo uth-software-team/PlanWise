@@ -86,8 +86,29 @@ public final class SlotCalculator {
      */
     public static boolean isWithinOneLocalDay(Instant start, Instant end, ZoneId zone) {
         if (!start.isBefore(end)) return false;
-        Instant nextMidnight = start.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant();
-        return !end.isAfter(nextMidnight);
+        return !end.isAfter(nextLocalMidnight(start, zone));
+    }
+
+    /**
+     * Splits {@code range} at every local midnight of {@code zone}, so each piece satisfies
+     * {@link #isWithinOneLocalDay} (same day boundary as edit/confirm). Do not merge the pieces again: merging
+     * joins adjacent ranges and would undo the split.
+     */
+    public static List<TimeRange> splitAtLocalMidnights(TimeRange range, ZoneId zone) {
+        List<TimeRange> pieces = new ArrayList<>();
+        Instant cursor = range.start();
+        while (cursor.isBefore(range.end())) {
+            Instant midnight = nextLocalMidnight(cursor, zone);
+            Instant pieceEnd = midnight.isBefore(range.end()) ? midnight : range.end();
+            pieces.add(new TimeRange(cursor, pieceEnd));
+            cursor = pieceEnd;
+        }
+        return pieces;
+    }
+
+    /** Start of the next local day; for zones that skip 00:00 this is the first valid instant of that day. */
+    private static Instant nextLocalMidnight(Instant instant, ZoneId zone) {
+        return instant.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant();
     }
 
     public static int minutesBetween(Instant start, Instant end) {

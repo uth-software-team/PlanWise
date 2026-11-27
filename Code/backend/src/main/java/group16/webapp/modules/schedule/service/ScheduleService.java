@@ -129,9 +129,9 @@ public class ScheduleService implements ScheduleApi {
         allBusy.addAll(committedBusy);
         List<TimeRange> freeSlots = SlotCalculator.subtractBusy(availIntervals, allBusy);
 
-        SchedulingEngine.EngineResult result = schedulingEngine.generate(targetTasks, remainingByTask, freeSlots, now);
-
         ZoneId userZone = resolveUserZone(userId);
+        SchedulingEngine.EngineResult result = schedulingEngine.generate(targetTasks, remainingByTask, freeSlots, userZone, now);
+
         LocalDate weekStart = LocalDate.ofInstant(request.windowStart(), userZone)
                 .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 

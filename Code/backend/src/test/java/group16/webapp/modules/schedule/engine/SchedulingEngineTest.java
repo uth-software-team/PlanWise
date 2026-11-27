@@ -9,6 +9,8 @@ import group16.webapp.modules.task.api.TaskPriority;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -21,6 +23,10 @@ class SchedulingEngineTest {
     private static final Instant NOW = t("2026-11-30T08:00");
     private static final Instant CREATED = t("2026-11-01T00:00");
     private static final Instant FAR_DEADLINE = t("2026-12-10T00:00");
+
+    /** Existing cases use UTC; all their slots stay within one UTC day, so HC-04 splitting does not change them. */
+    private static final ZoneId ZONE = ZoneOffset.UTC;
+    private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final SchedulingEngine engine = new SchedulingEngine();
 
@@ -37,7 +43,7 @@ class SchedulingEngineTest {
     }
 
     private EngineResult run(List<SchedulableTask> tasks, List<TimeRange> free) {
-        return engine.generate(tasks, Map.of(), free, NOW);
+        return engine.generate(tasks, Map.of(), free, ZONE, NOW);
     }
 
     private static List<Long> order(EngineResult result) {
@@ -85,7 +91,7 @@ class SchedulingEngineTest {
         var b = task(2L, TaskPriority.MEDIUM, FAR_DEADLINE, 60);
 
         // Task 1 already has 90 confirmed minutes -> only 30 remaining, so it goes first and lasts 30 min.
-        var result = engine.generate(List.of(a, b), Map.of(1L, 30, 2L, 60), List.of(r("09:00", "12:00")), NOW);
+        var result = engine.generate(List.of(a, b), Map.of(1L, 30, 2L, 60), List.of(r("09:00", "12:00")), ZONE, NOW);
 
         assertEquals(List.of(1L, 2L), order(result));
         assertEquals(r("09:00", "09:30"), new TimeRange(result.slots().get(0).startAt(), result.slots().get(0).endAt()));
@@ -94,7 +100,7 @@ class SchedulingEngineTest {
     @Test
     void taskWithNoRemainingTimeIsSkipped() {
         var done = task(1L, TaskPriority.HIGH, FAR_DEADLINE, 60);
-        var result = engine.generate(List.of(done), Map.of(1L, 0), List.of(r("09:00", "12:00")), NOW);
+        var result = engine.generate(List.of(done), Map.of(1L, 0), List.of(r("09:00", "12:00")), ZONE, NOW);
 
         assertTrue(result.slots().isEmpty());
         assertTrue(result.unscheduled().isEmpty());
@@ -215,6 +221,52 @@ class SchedulingEngineTest {
 
         assertTrue(result.slots().isEmpty());
         assertEquals(UnscheduledReason.INSUFFICIENT_TIME, result.unscheduled().get(0).reason());
+    }
+
+    // HC-04 in Asia/Ho_Chi_Minh (+07): 15:00Z = 22:00, 16:00Z = 23:00, 17:00Z = 00:00, 19:00Z = 02:00 local.
+
+    private EngineResult runIn(ZoneId zone, SchedulableTask task, TimeRange free) {
+        return engine.generate(List.of(task), Map.of(), List.of(free), zone, NOW);
+    }
+
+    @Test
+    void hc04_sessionEndsExactlyAtLocalMidnight() {
+        var result = runIn(VN, task(1L, TaskPriority.HIGH, FAR_DEADLINE, 120), r("15:00", "19:00"));
+
+        assertEquals(List.of(new PlannedSlot(1L, t("2026-11-30T15:00"), t("2026-11-30T17:00"))), result.slots());
+    }
+
+    @Test
+    void hc04_taskThatWouldCrossLocalMidnightIsInsufficient() {
+        var result = runIn(VN, task(1L, TaskPriority.HIGH, FAR_DEADLINE, 180), r("15:00", "19:00"));
+
+        assertTrue(result.slots().isEmpty());
+        assertEquals(UnscheduledReason.INSUFFICIENT_TIME, result.unscheduled().get(0).reason());
+    }
+
+    @Test
+    void hc04_taskMovesToNextLocalDayWhenBeforeMidnightIsTooShort() {
+        // 23:00–02:00 local: 60 min before midnight, 120 min after; a 90-min task starts at 00:00.
+        var result = runIn(VN, task(1L, TaskPriority.HIGH, FAR_DEADLINE, 90), r("16:00", "19:00"));
+
+        assertEquals(List.of(new PlannedSlot(1L, t("2026-11-30T17:00"), t("2026-11-30T18:30"))), result.slots());
+    }
+
+    @Test
+    void hc04_sameInstantsGiveDifferentResultsPerZone() {
+        var task = task(1L, TaskPriority.HIGH, FAR_DEADLINE, 180);
+
+        assertEquals(1, runIn(ZoneOffset.UTC, task, r("16:00", "19:00")).slots().size());
+        assertTrue(runIn(VN, task, r("16:00", "19:00")).slots().isEmpty());
+    }
+
+    @Test
+    void hc04_adjacentFreeSlotsAcrossMidnightAreNotJoined() {
+        // Two adjacent inputs meeting at local midnight are merged first, then split again at midnight.
+        var result = engine.generate(List.of(task(1L, TaskPriority.HIGH, FAR_DEADLINE, 180)), Map.of(),
+                List.of(r("15:00", "17:00"), r("17:00", "19:00")), VN, NOW);
+
+        assertTrue(result.slots().isEmpty());
     }
 
     @Test
