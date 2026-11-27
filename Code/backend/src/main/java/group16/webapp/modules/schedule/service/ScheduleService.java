@@ -300,7 +300,8 @@ public class ScheduleService implements ScheduleApi {
 
     @Transactional
     public ProposalBatchResponse confirmProposal(Long userId, Long proposalId, ConfirmRequest request) {
-        ScheduleProposal proposal = proposalRepository.findByIdAndUserId(proposalId, userId)
+        // Row lock first: a concurrent confirm of the same batch waits here, then sees the committed status/version.
+        ScheduleProposal proposal = proposalRepository.findByIdAndUserIdForUpdate(proposalId, userId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (proposal.getStatus() != ProposalStatus.PROPOSED) {

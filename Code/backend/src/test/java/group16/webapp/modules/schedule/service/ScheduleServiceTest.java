@@ -129,7 +129,7 @@ class ScheduleServiceTest {
         session.setEndAt(end);
         session.setStatus(SessionStatus.PROPOSED);
 
-        when(proposalRepository.findByIdAndUserId(100L, 1L)).thenReturn(Optional.of(proposal));
+        when(proposalRepository.findByIdAndUserIdForUpdate(100L, 1L)).thenReturn(Optional.of(proposal));
         when(sessionRepository.findByProposalIdOrderByStartAtAsc(100L)).thenReturn(List.of(session));
         when(availabilityApi.availableIntervals(eq(1L), any(), any())).thenReturn(List.of(new TimeRange(start, end)));
         when(availabilityApi.fixedEventOccurrences(eq(1L), any(), any())).thenReturn(List.of());

@@ -35,6 +35,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -47,6 +49,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -126,6 +130,7 @@ class ScheduleServiceIntegrationTests {
     @Autowired private ScheduleProposalRepository proposalRepository;
     @Autowired private ScheduleSessionRepository sessionRepository;
     @Autowired private UserRepository userRepository;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     private long userId;
 
@@ -425,6 +430,78 @@ class ScheduleServiceIntegrationTests {
                 sessionRepository.findById(first.sessions().get(0).sessionId()).orElseThrow().getStatus());
     }
 
+    /**
+     * "OK", or the 409 code the loser gets. STALE_VERSION / DATA_CONFLICT are returned bare so the assertions can
+     * match them; any other outcome carries its details (conflict codes, exception type) for the failure message.
+     */
+    private String confirmOutcome(Long proposalId, int version) {
+        try {
+            service.confirmProposal(userId, proposalId, new ConfirmRequest(version));
+            return "OK";
+        } catch (AppException e) {
+            if (e.getData() instanceof ConflictErrorResponse response) {
+                return e.getErrorCode().name() + " " + response.conflicts().stream()
+                        .map(c -> c.code() + "@session" + c.sessionId()).toList();
+            }
+            return e.getErrorCode().name();
+        } catch (OptimisticLockingFailureException e) {
+            // Mapped to 409 STALE_VERSION by GlobalExceptionHandler.
+            return ErrorCode.STALE_VERSION.name();
+        } catch (RuntimeException e) {
+            return "UNEXPECTED " + e.getClass().getName() + ": " + e.getMessage();
+        }
+    }
+
+    /**
+     * Deterministic regression for the CI race: transaction 1 confirms the batch and holds the proposal row lock
+     * without committing; transaction 2's confirm must block on that lock (not run its constraint checks against
+     * a half-finished state), then, after transaction 1 commits, get 409 DATA_CONFLICT or STALE_VERSION.
+     */
+    @Test
+    void secondConfirmWaitsForFirstTransactionAndIsRejectedWith409() throws Exception {
+        ProposalBatchResponse proposal = generate();
+        int v0 = storedVersion(proposal.proposalId());
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+
+        CountDownLatch firstHoldsLock = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> first = executor.submit(() -> tx.execute(status -> {
+                String outcome = confirmOutcome(proposal.proposalId(), v0); // joins this transaction
+                firstHoldsLock.countDown();
+                try {
+                    if (!releaseFirst.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("release signal not received");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
+                }
+                return outcome;
+            }));
+            assertTrue(firstHoldsLock.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "first confirm did not finish its work");
+
+            Future<String> second = executor.submit(() -> confirmOutcome(proposal.proposalId(), v0));
+            // While transaction 1 is open, the second confirm must still be blocked on the row lock.
+            assertThrows(TimeoutException.class, () -> second.get(500, TimeUnit.MILLISECONDS),
+                    "second confirm must wait for the first transaction");
+
+            releaseFirst.countDown();
+            assertEquals("OK", first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            String loser = second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            assertTrue(Set.of(ErrorCode.STALE_VERSION.name(), ErrorCode.DATA_CONFLICT.name()).contains(loser),
+                    "the second confirm must be rejected with 409 STALE_VERSION/DATA_CONFLICT: " + loser);
+        } finally {
+            releaseFirst.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        }
+
+        assertEquals(ProposalStatus.CONFIRMED, proposalRepository.findById(proposal.proposalId()).orElseThrow().getStatus());
+        assertEquals(v0 + 1, storedVersion(proposal.proposalId()));
+    }
+
     @Test
     void concurrentConfirmOfSameBatchSucceedsExactlyOnce() throws Exception {
         ProposalBatchResponse proposal = generate();
@@ -435,15 +512,7 @@ class ScheduleServiceIntegrationTests {
         try {
             Callable<String> confirm = () -> {
                 barrier.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                try {
-                    service.confirmProposal(userId, proposal.proposalId(), new ConfirmRequest(v0));
-                    return "OK";
-                } catch (AppException e) {
-                    return e.getErrorCode().name();
-                } catch (OptimisticLockingFailureException e) {
-                    // Mapped to 409 STALE_VERSION by GlobalExceptionHandler.
-                    return ErrorCode.STALE_VERSION.name();
-                }
+                return confirmOutcome(proposal.proposalId(), v0);
             };
             Future<String> a = executor.submit(confirm);
             Future<String> b = executor.submit(confirm);
