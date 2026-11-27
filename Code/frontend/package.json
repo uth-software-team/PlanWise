@@ -1,7 +1,7 @@
-﻿{
+{
   "name": "planwise-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.0.0",
   "type": "module",
   "packageManager": "npm@11.20.0",
   "scripts": {
@@ -14,13 +14,12 @@
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
-    "clsx": "^2.0.0",
     "cn": "0.5.2",
     "lucide-react": "^1.77.0",
     "radix-ui": "1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "tailwind-merge": "^3.0.1"
+    "react-router-dom": "^7.18.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

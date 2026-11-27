@@ -3,7 +3,7 @@
 General rules (approval workflow, git, security, source of truth) are in the root `CLAUDE.md`. This file adds frontend rules.
 
 ## Status
-**Scaffolded (FE-00).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier. Routing comes in FE-01; OpenAPI type generation in FE-02.
+**Scaffolded (FE-00) + router/layout/auth guard (FE-01).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router. OpenAPI type generation and API client come in FE-02.
 Base UI on the approved API contract, not guesses.
 
 ## Runtime
@@ -15,9 +15,9 @@ React, TypeScript (strict), Vite, Tailwind CSS, shadcn/ui, ESLint, Prettier. Res
 Don't add other UI/state libraries without approval.
 
 ## Direct dependencies (keep in sync with package.json)
-- Runtime: `react`, `react-dom`, `class-variance-authority`, `lucide-react`, `cn` (pinned 0.5.2), `radix-ui` (pinned 1.8.1).
+- Runtime: `react`, `react-dom`, `react-router-dom`, `class-variance-authority`, `lucide-react`, `cn` (pinned 0.5.2), `radix-ui` (pinned 1.8.1).
 - Dev: `vite`, `@vitejs/plugin-react`, `typescript`, `@types/react`, `@types/react-dom`, `@types/node`, `tailwindcss`, `@tailwindcss/vite`, `tw-animate-css`, `eslint`, `@eslint/js`, `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-react-refresh`, `globals`, `prettier`, `eslint-config-prettier`.
-- Deferred: `react-router-dom` (FE-01), `openapi-typescript` (FE-02).
+- Deferred: `openapi-typescript` (FE-02).
 
 ## Import conventions
 - Class names: `import { cn, type ClassValue } from '@/lib/utils'` (re-exports the `cn` package). Don't import `clsx` or `tailwind-merge` directly.
@@ -32,6 +32,22 @@ Don't add other UI/state libraries without approval.
 - Lint: `npm run lint` (ESLint)
 - Format: `npm run format` / `npm run format:check` (Prettier)
 - Add shadcn component: `npx shadcn@4.23.0 add <name>`
+
+## Routes & auth guard (FE-01)
+- Router: `src/app/router.tsx` (`createBrowserRouter`). Menu config: `src/app/nav.ts`. Layouts: `src/app/layouts/`. Guards and generic pages: `src/routes/`.
+- Public only (signed-in users go to `/tasks`): `/login`, `/register` (placeholders until FE-AU).
+- Protected (no token → `/login?redirect=<path>`): `/` → `/tasks` (default), `/overview`, `/tasks`, `/schedule`, `/groups`, `/ai`, `/notifications`, `/settings`.
+- `/overview` and `/notifications` are P1 placeholders: their routes exist but they are hidden from MVP navigation (`inNav: false` in `nav.ts`), and the header has no notification bell. Routes come from `APP_PAGES`; the sidebar uses `MAIN_NAV`/`SECONDARY_NAV` (only `inNav: true`). Never build routes from the nav lists.
+- `*` → 404 page.
+- Token (CG-04): `src/lib/auth-token.ts`, key `planwise.accessToken` in `localStorage`. Always change it via `setToken`/`clearToken`; guards use `useHasToken()` and react to changes in this tab and other tabs (`storage` event). Guard checks presence only; expiry/401 handling comes in FE-02. Logout = `clearToken()` + go to `/login`.
+- Feature tasks replace a placeholder by pointing its route at `features/<module>` pages; keep paths stable.
+
+## Design & accessibility
+- Team design (`PlanWise Document/PlanWise AI Web Design/`) is the source of truth. Theme tokens (indigo) live in `src/index.css`; use semantic classes (`bg-primary`, `text-muted-foreground`, …), not raw colors, inside the app shell.
+- Contrast: text ≥ 4.5:1, focus ring and UI boundaries ≥ 3:1. Focus rings are solid `ring-ring` (not `/50`).
+- Keyboard: skip link to `#main-content`, visible `focus-visible` rings, touch targets ≥ 44px on nav and header buttons.
+- Local edits to shadcn files (re-apply if a component is re-added with the CLI): `button.tsx` focus ring `ring-ring` instead of `ring-ring/50`; `dropdown-menu.tsx` `DropdownMenuItem` adds `focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring` (inset keyboard focus ring).
+- `ui-ux-pro-max` skill: guidance only; see `.claude/skills/ui-ux-pro-max/UPSTREAM.md` for usage rules.
 
 ## Structure & Conventions
 - Feature-based folders (e.g. `features/tasks`, `features/schedule`, `features/teams`).
