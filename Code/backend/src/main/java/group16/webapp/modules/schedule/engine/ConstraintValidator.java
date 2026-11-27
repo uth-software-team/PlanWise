@@ -8,9 +8,10 @@ import group16.webapp.modules.task.api.TaskSummary;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.*;
 
-/** Validates hard constraints HC-01..HC-08 for batch sessions (SC-04 / SC-07). */
+/** Validates hard constraints HC-01..HC-08 (incl. HC-04 same local day) for batch sessions (SC-04 / SC-07). */
 @Component
 public class ConstraintValidator {
 
@@ -22,6 +23,7 @@ public class ConstraintValidator {
             Map<Long, TaskSummary> taskSummaries,
             Map<Long, Integer> remainingMinutesByTask,
             Set<Long> schedulableTaskIds,
+            ZoneId userZone,
             Instant now
     ) {
         List<ConflictErrorDto> conflicts = new ArrayList<>();
@@ -36,6 +38,12 @@ public class ConstraintValidator {
             if (task == null || !schedulableTaskIds.contains(s.getTaskId())) {
                 conflicts.add(new ConflictErrorDto(s.getId(), ConflictCode.TASK_NOT_SCHEDULABLE,
                         "Task is no longer eligible for scheduling"));
+            }
+
+            // HC-04: startAt < endAt within one calendar day of the user's timezone
+            if (!SlotCalculator.isWithinOneLocalDay(s.getStartAt(), s.getEndAt(), userZone)) {
+                conflicts.add(new ConflictErrorDto(s.getId(), ConflictCode.INVALID_TIME_RANGE,
+                        "Session must start and end on the same day in your timezone"));
             }
 
             // HC-05: cannot schedule in the past

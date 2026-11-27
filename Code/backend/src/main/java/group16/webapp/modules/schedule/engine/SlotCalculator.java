@@ -4,6 +4,7 @@ import group16.webapp.modules.availability.api.TimeRange;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -77,6 +78,16 @@ public final class SlotCalculator {
             }
         }
         return false;
+    }
+
+    /**
+     * HC-04: {@code [start, end)} is non-empty and stays within one calendar day of {@code zone}. Half-open, so a
+     * range ending exactly at the next local midnight is still the same day. DST-safe via {@code atStartOfDay}.
+     */
+    public static boolean isWithinOneLocalDay(Instant start, Instant end, ZoneId zone) {
+        if (!start.isBefore(end)) return false;
+        Instant nextMidnight = start.atZone(zone).toLocalDate().plusDays(1).atStartOfDay(zone).toInstant();
+        return !end.isAfter(nextMidnight);
     }
 
     public static int minutesBetween(Instant start, Instant end) {

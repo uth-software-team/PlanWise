@@ -4,6 +4,8 @@ import group16.webapp.modules.availability.api.TimeRange;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -85,6 +87,52 @@ class SlotCalculatorTest {
         assertFalse(SlotCalculator.isContainedWithin(r("11:00", "12:01"), containers));
         // Adjacent availability rules count as one continuous range.
         assertTrue(SlotCalculator.isContainedWithin(r("11:00", "13:00"), List.of(r("09:00", "12:00"), r("12:00", "14:00"))));
+    }
+
+    private static final ZoneId VN = ZoneId.of("Asia/Ho_Chi_Minh"); // UTC+7, no DST
+
+    @Test
+    void hc04_sameLocalDayIsValid_andEndingExactlyAtLocalMidnightIsAllowed() {
+        // 23:00–24:00 local (+07) = 16:00Z–17:00Z.
+        assertTrue(SlotCalculator.isWithinOneLocalDay(t("16:00"), t("17:00"), VN));
+        assertTrue(SlotCalculator.isWithinOneLocalDay(t("02:00"), t("03:00"), VN));
+    }
+
+    @Test
+    void hc04_crossingLocalMidnightIsInvalid() {
+        // 23:30–00:30 local.
+        assertFalse(SlotCalculator.isWithinOneLocalDay(t("16:30"), t("17:30"), VN));
+    }
+
+    @Test
+    void hc04_usesUserZoneNotUtc() {
+        // 16:30Z–17:30Z is one UTC day but crosses midnight in +07; 23:30Z–00:30Z is the reverse.
+        assertTrue(SlotCalculator.isWithinOneLocalDay(t("16:30"), t("17:30"), ZoneOffset.UTC));
+        assertFalse(SlotCalculator.isWithinOneLocalDay(t("16:30"), t("17:30"), VN));
+        Instant lateUtc = t("23:30");
+        assertFalse(SlotCalculator.isWithinOneLocalDay(lateUtc, lateUtc.plusSeconds(3600), ZoneOffset.UTC));
+        assertTrue(SlotCalculator.isWithinOneLocalDay(lateUtc, lateUtc.plusSeconds(3600), VN));
+    }
+
+    @Test
+    void hc04_emptyOrReversedRangeIsInvalid() {
+        assertFalse(SlotCalculator.isWithinOneLocalDay(t("10:00"), t("10:00"), VN));
+        assertFalse(SlotCalculator.isWithinOneLocalDay(t("11:00"), t("10:00"), VN));
+    }
+
+    @Test
+    void hc04_dstDaysUseRealLocalMidnight() {
+        ZoneId ny = ZoneId.of("America/New_York");
+        // 2026-11-01 is 25 h long (EDT -> EST). 22:00–24:00 EST = 03:00Z–05:00Z on 11-02.
+        assertTrue(SlotCalculator.isWithinOneLocalDay(
+                Instant.parse("2026-11-02T03:00:00Z"), Instant.parse("2026-11-02T05:00:00Z"), ny));
+        assertFalse(SlotCalculator.isWithinOneLocalDay(
+                Instant.parse("2026-11-02T03:00:00Z"), Instant.parse("2026-11-02T05:01:00Z"), ny));
+        // 2026-03-08 is 23 h long (EST -> EDT). 23:00–24:00 EDT = 03:00Z–04:00Z on 03-09.
+        assertTrue(SlotCalculator.isWithinOneLocalDay(
+                Instant.parse("2026-03-09T03:00:00Z"), Instant.parse("2026-03-09T04:00:00Z"), ny));
+        assertFalse(SlotCalculator.isWithinOneLocalDay(
+                Instant.parse("2026-03-09T03:00:00Z"), Instant.parse("2026-03-09T04:01:00Z"), ny));
     }
 
     @Test

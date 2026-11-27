@@ -198,7 +198,8 @@ public class ScheduleService implements ScheduleApi {
 
     @Transactional
     public ProposalBatchResponse editSession(Long userId, Long sessionId, SessionEditRequest request) {
-        if (!request.startAt().isBefore(request.endAt())) {
+        // HC-04: startAt < endAt and the same calendar day in the user's timezone (request-level 400).
+        if (!SlotCalculator.isWithinOneLocalDay(request.startAt(), request.endAt(), resolveUserZone(userId))) {
             throw new AppException(ErrorCode.INVALID_TIME_RANGE);
         }
 
@@ -218,8 +219,24 @@ public class ScheduleService implements ScheduleApi {
 
         verifyAndBumpBatchVersion(proposal, request.version());
 
+        // Siblings are read before the edit is applied; the edited session goes last so that cumulative checks
+        // (HC-07) are attributed to it. Only the edited session's conflicts block the edit (BR-10).
+        List<ScheduleSession> validationOrder = new ArrayList<>(
+                sessionRepository.findByProposalIdOrderByStartAtAsc(proposal.getId()).stream()
+                        .filter(s -> !Objects.equals(s.getId(), session.getId()))
+                        .toList());
         session.setStartAt(request.startAt());
         session.setEndAt(request.endAt());
+        validationOrder.add(session);
+
+        List<ConflictErrorDto> conflicts = checkHardConstraints(userId, validationOrder, Instant.now()).conflicts().stream()
+                .filter(c -> Objects.equals(c.sessionId(), session.getId()))
+                .toList();
+        if (!conflicts.isEmpty()) {
+            // Thrown inside the transaction: the version bump and the new times are rolled back.
+            throw AppException.conflicts(conflicts);
+        }
+
         session.setVersion(session.getVersion() + 1);
         sessionRepository.save(session);
 
@@ -297,40 +314,11 @@ public class ScheduleService implements ScheduleApi {
             throw new AppException(ErrorCode.DATA_CONFLICT, "Cannot confirm an empty schedule proposal");
         }
 
-        Instant now = Instant.now();
-        Instant minStart = sessions.stream().map(ScheduleSession::getStartAt).min(Instant::compareTo).orElse(proposal.getHorizonStart());
-        Instant maxEnd = sessions.stream().map(ScheduleSession::getEndAt).max(Instant::compareTo).orElse(proposal.getHorizonEnd());
-
-        AvailabilityApi availabilityApi = availabilityApiProvider.getIfAvailable();
-        List<TimeRange> availIntervals = availabilityApi != null ? availabilityApi.availableIntervals(userId, minStart, maxEnd) : List.of();
-        List<TimeRange> fixedEvents = availabilityApi != null ? availabilityApi.fixedEventOccurrences(userId, minStart, maxEnd) : List.of();
-        List<TimeRange> existingCommitted = sessionRepository
-                .findByUserIdAndStatusInAndStartAtLessThanAndEndAtGreaterThan(userId, COMMITTED_STATUSES, maxEnd, minStart)
-                .stream()
-                .map(s -> new TimeRange(s.getStartAt(), s.getEndAt()))
-                .toList();
-
-        AssignmentApi assignmentApi = assignmentApiProvider.getIfAvailable();
-        Set<Long> acceptedGroupIds = assignmentApi != null ? assignmentApi.acceptedTaskIds(userId) : Set.of();
-
-        TaskApi taskApi = taskApiProvider.getIfAvailable();
-        List<SchedulableTask> schedulableTasks = taskApi != null ? taskApi.schedulableTasks(userId, acceptedGroupIds) : List.of();
-        Set<Long> schedulableTaskIds = schedulableTasks.stream().map(SchedulableTask::taskId).collect(Collectors.toSet());
-        Map<Long, Integer> remainingMinutes = computeRemainingMinutes(userId, schedulableTasks);
-
-        List<Long> taskIds = sessions.stream().map(ScheduleSession::getTaskId).distinct().toList();
-        Map<Long, TaskSummary> summaryMap = taskApi != null
-                ? taskApi.summaries(taskIds).stream().collect(Collectors.toMap(TaskSummary::taskId, Function.identity()))
-                : Map.of();
-
-        List<ConflictErrorDto> conflicts = constraintValidator.validateBatch(
-                sessions, availIntervals, fixedEvents, existingCommitted,
-                summaryMap, remainingMinutes, schedulableTaskIds, now
-        );
-
-        if (!conflicts.isEmpty()) {
-            throw AppException.conflicts(conflicts);
+        HardConstraintCheck check = checkHardConstraints(userId, sessions, Instant.now());
+        if (!check.conflicts().isEmpty()) {
+            throw AppException.conflicts(check.conflicts());
         }
+        Map<Long, TaskSummary> summaryMap = check.summaries();
 
         Instant confirmedAt = Instant.now();
         proposal.setStatus(ProposalStatus.CONFIRMED);
@@ -380,6 +368,45 @@ public class ScheduleService implements ScheduleApi {
                 .stream()
                 .map(s -> new ScheduledSession(s.getId(), s.getTaskId(), s.getStartAt(), s.getEndAt(), s.getStatus()))
                 .toList();
+    }
+
+    private record HardConstraintCheck(List<ConflictErrorDto> conflicts, Map<Long, TaskSummary> summaries) {}
+
+    /**
+     * Re-reads availability, fixed events, committed sessions and task eligibility, then checks HC-01..HC-08 (HC-04 in the
+     * user's current timezone) for {@code sessions} (shared by edit, BR-10, and confirm, BR-11).
+     */
+    private HardConstraintCheck checkHardConstraints(Long userId, List<ScheduleSession> sessions, Instant now) {
+        Instant minStart = sessions.stream().map(ScheduleSession::getStartAt).min(Instant::compareTo).orElseThrow();
+        Instant maxEnd = sessions.stream().map(ScheduleSession::getEndAt).max(Instant::compareTo).orElseThrow();
+
+        AvailabilityApi availabilityApi = availabilityApiProvider.getIfAvailable();
+        List<TimeRange> availIntervals = availabilityApi != null ? availabilityApi.availableIntervals(userId, minStart, maxEnd) : List.of();
+        List<TimeRange> fixedEvents = availabilityApi != null ? availabilityApi.fixedEventOccurrences(userId, minStart, maxEnd) : List.of();
+        List<TimeRange> existingCommitted = sessionRepository
+                .findByUserIdAndStatusInAndStartAtLessThanAndEndAtGreaterThan(userId, COMMITTED_STATUSES, maxEnd, minStart)
+                .stream()
+                .map(s -> new TimeRange(s.getStartAt(), s.getEndAt()))
+                .toList();
+
+        AssignmentApi assignmentApi = assignmentApiProvider.getIfAvailable();
+        Set<Long> acceptedGroupIds = assignmentApi != null ? assignmentApi.acceptedTaskIds(userId) : Set.of();
+
+        TaskApi taskApi = taskApiProvider.getIfAvailable();
+        List<SchedulableTask> schedulableTasks = taskApi != null ? taskApi.schedulableTasks(userId, acceptedGroupIds) : List.of();
+        Set<Long> schedulableTaskIds = schedulableTasks.stream().map(SchedulableTask::taskId).collect(Collectors.toSet());
+        Map<Long, Integer> remainingMinutes = computeRemainingMinutes(userId, schedulableTasks);
+
+        List<Long> taskIds = sessions.stream().map(ScheduleSession::getTaskId).distinct().toList();
+        Map<Long, TaskSummary> summaryMap = taskApi != null
+                ? taskApi.summaries(taskIds).stream().collect(Collectors.toMap(TaskSummary::taskId, Function.identity()))
+                : Map.of();
+
+        List<ConflictErrorDto> conflicts = constraintValidator.validateBatch(
+                sessions, availIntervals, fixedEvents, existingCommitted,
+                summaryMap, remainingMinutes, schedulableTaskIds, resolveUserZone(userId), now
+        );
+        return new HardConstraintCheck(conflicts, summaryMap);
     }
 
     private void verifyAndBumpBatchVersion(ScheduleProposal proposal, Integer expectedVersion) {
