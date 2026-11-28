@@ -9,9 +9,9 @@ Persistent audit state. Follow CHECKLIST.md. Update after each completed module.
 - Scope: backend `Code/backend/src/main`, frontend `Code/frontend/src`, CI, compose, env examples. Implemented on this branch: auth/profile, group (GR-01..04), schedule. Stubs (NOT_IMPLEMENTED): task, availability/fixed events/calendar, assignment, AI, notification (NoOp)
 - Branch: audit on `feature/common-contract-max-query-range` (8e7db4b); fixes on `fix/auth-jwt-hardening` from origin/develop 5d03acb (PR #48 merged; audited files identical)
 - Baseline commit: 8e7db4b
-- Last audited commit: 8f38236 (frontend checklist 3)
+- Last audited commit: 8f38236 (frontend checklist 3); SA-10/SA-11 fix 2887f76 on `fix/frontend-index-and-token-bar` (from origin/develop 5d03acb)
 - Working tree: only this file, uncommitted (TV1 commits, D13)
-- Phase: COMPLETE for SA-02/SA-04; other items pending
+- Phase: COMPLETE for SA-02/SA-04/SA-10/SA-11; other items pending
 - Updated: 2026-11-28
 
 ## Coverage
@@ -71,8 +71,8 @@ Status: PENDING / REVIEWED / PARTIAL / BLOCKED / N/A.
 | SA-07 | INFO | CONFIRMED | GroupServiceImpl.java:93-110; GroupAvailabilityServiceImpl.java:41-60 | Leader adds any registered email without consent (G8); members see all members' BUSY intervals (CG-11) | Accepted decisions | Any user can see another user's busy times for ≤366 days; email existence oracle (404 vs 200) | None (accepted); flag for post-MVP invite flow |
 | SA-08 | INFO | CONFIRMED | SecurityConfig.java:52; application.properties:37 | Swagger/OpenAPI public, no prod profile | permitAll list | API surface disclosure if deployed | Disable springdoc in a future prod profile |
 | SA-09 | LOW | DEFERRED | GroupServiceImpl.java:236-238 | Per-member `userApi.findById` (N+1) | stream of findById | Slow for large groups only | `findAllById` batch lookup (optional) |
-| SA-10 | LOW | CONFIRMED | Code/frontend/index.html:1-25 | PR #31 (6102549) prepended a second HTML document to the FE-00 one | File has 2 `<html>` docs; built dist/index.html keeps 2 `<div id="root">`, first `lang="en"` | Invalid HTML, duplicate id, wrong document language for a Vietnamese UI (a11y/screen readers), inconsistent title | Restore the single FE-00 document (95236dc: `lang="vi"`, title "PlanWise AI") |
-| SA-11 | LOW | CONFIRMED | Code/frontend/src/features/schedule/components/SchedulePage.tsx:43-45,146-151,177-193 | "Standalone testing" JWT paste bar ships in production builds (not gated by `import.meta.env.DEV`) | Button always rendered; Apply calls `setAuthToken` | Users taught to paste tokens; a pasted attacker token silently switches the account (CWE-451/login-CSRF style) | Render the button/bar only when `import.meta.env.DEV`, or remove once FE-AU login exists |
+| SA-10 | LOW | VERIFIED | Code/frontend/index.html:1-25 | PR #31 (6102549) prepended a second HTML document to the FE-00 one | File has 2 `<html>` docs; built dist/index.html keeps 2 `<div id="root">`, first `lang="en"` | Invalid HTML, duplicate id, wrong document language for a Vietnamese UI (a11y/screen readers), inconsistent title | Restore the single FE-00 document (95236dc: `lang="vi"`, title "PlanWise AI") |
+| SA-11 | LOW | VERIFIED | Code/frontend/src/features/schedule/components/SchedulePage.tsx:43-45,146-151,177-193 | "Standalone testing" JWT paste bar ships in production builds (not gated by `import.meta.env.DEV`) | Button always rendered; Apply calls `setAuthToken` | Users taught to paste tokens; a pasted attacker token silently switches the account (CWE-451/login-CSRF style) | Render the button/bar only when `import.meta.env.DEV`, or remove once FE-AU login exists |
 | SA-12 | LOW | DEFERRED | Code/frontend/src/lib/apiClient.ts:109-112 | `fetch` without timeout/abort signal | No `AbortSignal` anywhere in src | Hung backend keeps `isBusy` true → all schedule actions disabled until reload | Default `AbortSignal.timeout(15000)` when caller passes no `signal`; map abort to `ApiError` (needs check:api-client test) |
 | SA-13 | INFO | POTENTIAL | Code/frontend/src/routes/ProtectedRoute.tsx:11-12 | `?redirect=` built now; consumer (FE-AU login) not written yet | Login page is a placeholder | Open redirect (CWE-601) if FE-AU navigates to it unchecked | FE-AU: accept only paths starting with `/` and not `//` or `/\`; else go to `/tasks` |
 | SA-14 | INFO | CONFIRMED | Code/frontend/src/app/layouts/UserMenu.tsx:19-21 | Logout clears the token but not `planwise.schedule.activeProposalId` (sessionStorage) | Next account in the same tab re-reads it → 404 → cleared (scheduleApi.ts:251-254) | None (server ownership check); cosmetic | None |
@@ -106,17 +106,21 @@ Approval: PENDING / APPROVED / REJECTED.
 | Regression pgTest | NOT_RUN | PASS | 2026-11-28 `./gradlew --offline pgTest --rerun-tasks`: 167 tests, 0 fail/error/skip |
 | IDE diagnostics (4 changed files) | — | PASS | VS Code Problems: 0 warnings/errors (may be unanalyzed if not open) |
 | New tests fail without fix | — | NOT_RUN | Inferred only (other-iss token would reach MVC → 404; placeholder would not throw) |
+| SA-10 (2887f76) | dist/index.html: 2 `<html>`, 2 `#root`, `lang="en"` | PASS | 2026-11-28 `npm run build`: 1 `<html>`, 1 `#root`, `lang="vi"`; body styled by index.css base layer |
+| SA-11 (2887f76) | Bundle contains token bar | PASS | Prod bundle: 0 hits for "Bearer Token:", "Paste JWT token", "Apply & Reload", "JWT Token"; `NODE_ENV=development` build (scratchpad): bar present |
+| Frontend regression (2887f76) | PASS (8f38236) | PASS | prettier --check (2 files), `eslint .` rc 0, `tsc -b` rc 0, build OK, check:api-client 10/10 |
+| IDE diagnostics (2 files) | — | PASS | index.html clean; SchedulePage.tsx 1 pre-existing Tailwind hint (`min-w-[260px]` → `min-w-65`), unchanged line, out of scope |
 
 Result: PASS / FAIL / NOT_RUN / BLOCKED / N/A.
 
 ## Resume
 
-- Completed: DISCOVER, BASELINE (H2 build), AUDIT of auth, group, schedule, secrets, CI, frontend storage; SA-02, SA-04 fixed + verified (committed 4faab9f, 8f38236); checklist 3 frontend reviewed
-- Pending: TV1 commit/PR of `fix/auth-jwt-hardening`; CVE scan (network approval); SA-10/SA-11 implementation on a separate `fix/` branch from develop; checklist 7, 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
-- Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 approved; SA-12 deferred (TV1 2026-11-28)
+- Completed: DISCOVER, BASELINE (H2 build), AUDIT of auth, group, schedule, secrets, CI, frontend storage; SA-02, SA-04 fixed + verified (committed 4faab9f, 8f38236); checklist 3 frontend reviewed; SA-10, SA-11 fixed + verified (2887f76)
+- Pending: TV1 PRs for `fix/auth-jwt-hardening` and `fix/frontend-index-and-token-bar`; CVE scan (network approval); checklist 7, 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
+- Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 (done); SA-12 deferred (TV1 2026-11-28)
 - Blockers: None
 - Decisions: SA-05..SA-08 treated as accepted by G7/G8/D11/CG-04/CG-11
 - Remaining risks: SA-01 brute force (accepted); SA-03 unbounded description/includeTaskIds (accepted); SA-09 N+1 (accepted); SA-12 no fetch timeout (accepted); unreviewed stub modules; dependency CVEs unknown
-- Next: TV1 commits this file on `fix/auth-jwt-hardening`; Claude implements SA-10/SA-11 on `fix/frontend-index-and-token-bar` from origin/develop (code only; verification recorded here afterwards); then checklist 7/8 or CVE scan
+- Next: TV1 commits this file and opens both PRs; then checklist 7/8 or CVE scan (needs approval)
 
 Resume pending work. Revalidate stale evidence when relevant files, configuration, dependencies, or requirements change. Store large sanitized reports separately. Never mark untested checks as PASS.
