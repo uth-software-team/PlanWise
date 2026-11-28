@@ -10,8 +10,8 @@ Persistent audit state. Follow CHECKLIST.md. Update after each completed module.
 - Branch: audit on `feature/common-contract-max-query-range` (8e7db4b); fixes on `fix/auth-jwt-hardening` from origin/develop 5d03acb (PR #48 merged; audited files identical)
 - Baseline commit: 8e7db4b
 - Last audited commit: 65b2d63 (checklist 7); 8f38236 (frontend checklist 3); SA-10/SA-11 fix 2887f76 on `fix/frontend-index-and-token-bar` (from origin/develop 5d03acb)
-- Working tree: only this file, uncommitted (TV1 commits, D13)
-- Phase: COMPLETE for SA-02/SA-04/SA-10/SA-11; other items pending
+- Working tree: TV1 commits (D13). SA-15/SA-17/SA-20 fixes live on `fix/schedule-remaining-minutes` (PR #49, head 08c6b9d, not merged)
+- Phase: COMPLETE for SA-02/SA-04/SA-10/SA-11; SA-15/SA-17/SA-20 FIXED on #49 (VERIFIED after #49 merges and post-merge build/pgTest); other items pending
 - Updated: 2026-11-28
 
 ## Coverage
@@ -82,11 +82,12 @@ Status: PENDING / REVIEWED / PARTIAL / BLOCKED / N/A.
 | SA-12 | LOW | DEFERRED | Code/frontend/src/lib/apiClient.ts:109-112 | `fetch` without timeout/abort signal | No `AbortSignal` anywhere in src | Hung backend keeps `isBusy` true → all schedule actions disabled until reload | Default `AbortSignal.timeout(15000)` when caller passes no `signal`; map abort to `ApiError` (needs check:api-client test) |
 | SA-13 | INFO | POTENTIAL | Code/frontend/src/routes/ProtectedRoute.tsx:11-12 | `?redirect=` built now; consumer (FE-AU login) not written yet | Login page is a placeholder | Open redirect (CWE-601) if FE-AU navigates to it unchecked | FE-AU: accept only paths starting with `/` and not `//` or `/\`; else go to `/tasks` |
 | SA-14 | INFO | CONFIRMED | Code/frontend/src/app/layouts/UserMenu.tsx:19-21 | Logout clears the token but not `planwise.schedule.activeProposalId` (sessionStorage) | Next account in the same tab re-reads it → 404 → cleared (scheduleApi.ts:251-254) | None (server ownership check); cosmetic | None |
-| SA-15 | LOW | CONFIRMED | Code/backend/src/main/java/group16/webapp/modules/schedule/service/ScheduleService.java:429-442 | `computeRemainingMinutes` loads every CONFIRMED/COMPLETED session the user ever had (`findByUserIdAndStatusIn`), not only those of the tasks being planned | Called by generate (:118) and checkHardConstraints (:408, edit + confirm) | Work and memory per request grow with account history; confirm does it while holding the proposal row lock | Query only the target task ids (`findByUserIdAndTaskIdInAndStatusIn`, index `idx_schedule_sessions_task` exists) or an aggregate SUM per task; no schema change |
+| SA-15 | LOW | FIXED (#49, 827b9f0) | Code/backend/src/main/java/group16/webapp/modules/schedule/service/ScheduleService.java:429-442 | `computeRemainingMinutes` loads every CONFIRMED/COMPLETED session the user ever had (`findByUserIdAndStatusIn`), not only those of the tasks being planned | Called by generate (:118) and checkHardConstraints (:408, edit + confirm) | Work and memory per request grow with account history; confirm does it while holding the proposal row lock | Query only the target task ids (`findByUserIdAndTaskIdInAndStatusIn`, index `idx_schedule_sessions_task` exists) or an aggregate SUM per task; no schema change |
 | SA-16 | LOW | DEFERRED | Code/backend/src/main/java/group16/webapp/modules/group/service/impl/GroupAvailabilityServiceImpl.java:55-58 | One `busyIntervals` expansion per ACTIVE member over up to 366 days; no member cap on a group (GroupServiceImpl.java:93-110) | CalendarApi has no implementation on this branch (501 NOT_IMPLEMENTED) | Any member of a large group can trigger members × 366-day expansions per request | Re-check after #39 lands CalendarApi; options: member cap, or a shorter max window for group availability (contract change) |
-| SA-17 | INFO | UNVERIFIED | ScheduleService.java:79-102,200-255,310-347 | Concurrent generate/generate and edit/confirm on one batch have no tests | Expected safe: `@Version` on ScheduleProposal (ScheduleProposal.java:38) → 409 STALE_VERSION; partial unique index `uk_schedule_proposals_active_user` (V10) → 409 DATA_CONFLICT. H2 tests cannot exercise the partial index | A regression could leave 2 PROPOSED batches or move a confirmed session unnoticed | Add pgTest cases (two threads, CountDownLatch) for both races |
+| SA-17 | INFO | FIXED (#49, 398aa49) | ScheduleService.java:79-102,200-255,310-347 | Concurrent generate/generate and edit/confirm on one batch have no tests | Expected safe: `@Version` on ScheduleProposal (ScheduleProposal.java:38) → 409 STALE_VERSION; partial unique index `uk_schedule_proposals_active_user` (V10) → 409 DATA_CONFLICT. H2 tests cannot exercise the partial index | A regression could leave 2 PROPOSED batches or move a confirmed session unnoticed | Add pgTest cases (two threads, CountDownLatch) for both races |
 | SA-18 | INFO | CONFIRMED | Code/backend/src/main/resources/application.properties | No transaction/statement timeout; Hikari defaults (pool 10, connectionTimeout 30 s) | No `spring.transaction.default-timeout`, no `statement_timeout` | A slow query or lock wait holds a pooled connection indefinitely | Optional: `spring.transaction.default-timeout` (config change); not needed for MVP |
 | SA-19 | INFO | CONFIRMED | ScheduleService.java:92-102,139-146 | Each generate keeps the old batch and its sessions as CANCELLED rows; no retention | No delete/cleanup path | Table growth only; queries filter by status/user and are indexed | None for MVP |
+| SA-20 | LOW | FIXED (#49, 827b9f0) | Code/backend/src/main/java/group16/webapp/modules/schedule/service/ScheduleService.java:214,250,270,279,313 (at 5d03acb) | Opposite lock order: `editSession`/`deleteSession` read the proposal without a lock (`findByIdAndUserId`, :214/:270) and at flush write/delete the session row (:250/:279) before the proposal row (version bump); `confirmProposal` locks the proposal first (`findByIdAndUserIdForUpdate`, :313), then writes the sessions | Code read at 5d03acb; deadlock not reproduced in a test | Concurrent edit/delete and confirm of one batch can deadlock; PostgreSQL aborts one transaction (40P01), so the user gets an error instead of 409. Data stays consistent (rollback) | Edit and delete lock the proposal row first (`findByIdAndUserIdForUpdate`), same order as confirm |
 
 Severity: CRITICAL / HIGH / MEDIUM / LOW / INFO.
 
@@ -105,6 +106,7 @@ Status: POTENTIAL / CONFIRMED / FALSE_POSITIVE / FIXED / VERIFIED / UNVERIFIED /
 | SA-12 | Default fetch timeout in apiRequest | Medium; slow generate calls may abort (pick timeout) | New check:api-client case | Revert commit | REJECTED / DEFERRED (TV1 2026-11-28) |
 | SA-15 | Repository method `findByUserIdAndTaskIdInAndStatusIn`; `computeRemainingMinutes` passes the task ids it computes for | Low; same result, fewer rows | Existing schedule tests (remaining minutes, HC-07) + build/pgTest | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-17 | 2 pgTest cases: concurrent generate (one PROPOSED remains, other 409), edit vs confirm (one wins, other 409, confirmed session unchanged) | Low (tests only); flakiness risk with threads | `./gradlew pgTest` | Revert commit | APPROVED (TV1 2026-11-28) |
+| SA-20 | `editSession`/`deleteSession`: `findByIdAndUserIdForUpdate` before any session write (same order as confirm); ScheduleServiceTest stubs moved to the locking method | Low; edit/delete now wait on a confirm of the same batch, then get 409 | ScheduleServiceTest (edit/delete stubs on the locking method); contract test `editDuringConfirmOfSameBatchIsRejectedAndConfirmedSessionStaysPut` (pg) | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-09 | Batch user lookup | Low | Existing group tests | Revert commit | REJECTED (TV1 2026-11-28: skip) |
 
 Approval: PENDING / APPROVED / REJECTED.
@@ -123,17 +125,22 @@ Approval: PENDING / APPROVED / REJECTED.
 | SA-11 (2887f76) | Bundle contains token bar | PASS | Prod bundle: 0 hits for "Bearer Token:", "Paste JWT token", "Apply & Reload", "JWT Token"; `NODE_ENV=development` build (scratchpad): bar present |
 | Frontend regression (2887f76) | PASS (8f38236) | PASS | prettier --check (2 files), `eslint .` rc 0, `tsc -b` rc 0, build OK, check:api-client 10/10 |
 | IDE diagnostics (2 files) | — | PASS | index.html clean; SchedulePage.tsx 1 pre-existing Tailwind hint (`min-w-[260px]` → `min-w-65`), unchanged line, out of scope |
+| SA-15 (827b9f0, #49) | Whole session history loaded | PASS | `computeRemainingMinutes` queries only the planned task ids; ScheduleServiceTest verifies `findByUserIdAndTaskIdInAndStatusIn(1, {10}, …)`; same results in existing schedule tests |
+| SA-17 (398aa49, #49) | No concurrency tests | PASS | `ScheduleServiceConcurrencyPgTests` (PostgreSQL 16): edit vs confirm, regenerate vs regenerate (both read the old batch before writing → one OK, one STALE_VERSION); case names in the local pgTest report; class rerun 3× green |
+| SA-20 (827b9f0, #49) | Opposite lock order | PASS (partial) | ScheduleServiceTest: edit/delete stubbed on `findByIdAndUserIdForUpdate` (unstubbed `findByIdAndUserId` returns empty → 404, so a revert fails); pg contract test passes. The deadlock interleaving itself is not reproduced: the contract test checks the outcome, not the lock order |
+| Regression #49 | H2 377, pg 167 (827b9f0) | PASS | 2026-11-28 local `./gradlew --offline --rerun-tasks build pgTest` on code == 398aa49: H2 375/375, pg 169/169 (2 cases moved H2 → pg); CI run 46128067711 on #49 head 08c6b9d: gitflow, frontend, test, pg SUCCESS |
 
 Result: PASS / FAIL / NOT_RUN / BLOCKED / N/A.
 
 ## Resume
 
+- Completed (fixes on #49): SA-15 (827b9f0), SA-20 (827b9f0), SA-17 (398aa49)
 - Completed: DISCOVER, BASELINE (H2 build), AUDIT of auth, group, schedule, secrets, CI, frontend storage; SA-02, SA-04 fixed + verified (committed 4faab9f, 8f38236); checklist 3 frontend reviewed; checklist 7 reviewed; SA-10, SA-11 fixed + verified (2887f76)
-- Pending: TV1 PRs for `fix/auth-jwt-hardening` and `fix/frontend-index-and-token-bar`; CVE scan (network approval); SA-15/SA-17 implementation on a `fix/` branch from develop; SA-16 re-check after #39; checklist 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
-- Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 (done); SA-12 deferred; SA-15, SA-17 approved; SA-16 deferred until #39 (TV1 2026-11-28)
+- Pending: review/ACCEPT/merge of PRs #49 (SA-15/SA-17/SA-20), #50 (SA-02/SA-04) and #51 (SA-10/SA-11); post-merge build/pgTest for VERIFIED; CVE scan (network approval); SA-16 re-check after #39; checklist 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
+- Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 (done); SA-12 deferred; SA-15, SA-17, SA-20 approved and fixed on #49; SA-16 deferred until #39 (TV1 2026-11-28)
 - Blockers: None
 - Decisions: SA-05..SA-08 treated as accepted by G7/G8/D11/CG-04/CG-11
 - Remaining risks: SA-01 brute force (accepted); SA-03 unbounded description/includeTaskIds (accepted); SA-09 N+1 (accepted); SA-12 no fetch timeout (accepted); unreviewed stub modules; dependency CVEs unknown
-- Next: TV1 commits this file; Claude implements SA-15 + SA-17 on `fix/schedule-remaining-minutes` from origin/develop; then checklist 8 or CVE scan (needs approval)
+- Next: merge #49, then sync this branch with `develop` (drop this branch's SEC-01 row in PROJECT_STATE.md, R50-1); then checklist 8 or CVE scan (needs approval)
 
 Resume pending work. Revalidate stale evidence when relevant files, configuration, dependencies, or requirements change. Store large sanitized reports separately. Never mark untested checks as PASS.
