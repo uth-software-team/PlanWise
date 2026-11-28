@@ -71,6 +71,23 @@ class ScheduleControllerStubTests extends AuthenticatedMvcTest {
 				.andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
 	}
 
+	/**
+	 * 366-day cap on the generate window, for the same caller (no availability rule): exactly 366 days passes the
+	 * range check and stops at NO_AVAILABILITY_RULE; one second more is INVALID_TIME_RANGE.
+	 */
+	@Test
+	void generateWindowIsCappedAt366Days() throws Exception {
+		// 2026-11-23T00:00Z + 366 days = 2027-11-24T00:00Z
+		callAuthenticated(HttpMethod.POST, "/v1/schedules/generate",
+				"{\"windowStart\":\"2026-11-23T00:00:00Z\",\"windowEnd\":\"2027-11-24T00:00:00Z\"}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("NO_AVAILABILITY_RULE"));
+		callAuthenticated(HttpMethod.POST, "/v1/schedules/generate",
+				"{\"windowStart\":\"2026-11-23T00:00:00Z\",\"windowEnd\":\"2027-11-24T00:00:01Z\"}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
+	}
+
 	/** Missing or malformed input. */
 	static Stream<Arguments> invalidInputs() {
 		return Stream.of(

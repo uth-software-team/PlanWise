@@ -3,6 +3,7 @@ package group16.webapp.common.util;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -49,6 +50,16 @@ class DateUtilsTests {
 		assertThat(DateUtils.isPastDeadline(deadline, deadline)).isFalse();
 		assertThat(DateUtils.isPastDeadline(deadline, deadline.minusSeconds(1))).isFalse();
 		assertThat(DateUtils.isPastDeadline(null, deadline)).isFalse();
+	}
+
+	@Test
+	void maxQueryRangeAllowsExactly366DaysAndRejectsOneNanosecondMore() {
+		Instant start = Instant.parse("2026-11-23T00:00:00Z");
+		Instant exactly366Days = start.plus(Duration.ofDays(366));
+
+		assertThat(DateUtils.MAX_QUERY_RANGE).isEqualTo(Duration.ofDays(366));
+		assertThat(DateUtils.exceedsMaxQueryRange(start, exactly366Days)).isFalse();
+		assertThat(DateUtils.exceedsMaxQueryRange(start, exactly366Days.plusNanos(1))).isTrue();
 	}
 
 }

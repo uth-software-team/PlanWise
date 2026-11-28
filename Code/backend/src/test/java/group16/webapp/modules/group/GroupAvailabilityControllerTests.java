@@ -34,6 +34,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -214,6 +215,25 @@ class GroupAvailabilityControllerTests extends AuthenticatedMvcTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
 		verifyNoInteractions(calendarApi);
+	}
+
+	@Test
+	void rangeLongerThan366DaysGets400WithoutCalendarCall() throws Exception {
+		String overMax = START_AT.plus(Duration.ofDays(366)).plusSeconds(1).toString();
+
+		callAs(member1, availabilityUri(group.getId(), START, overMax))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
+		verifyNoInteractions(calendarApi);
+	}
+
+	@Test
+	void rangeOfExactly366DaysIsAccepted() throws Exception {
+		String exactlyMax = START_AT.plus(Duration.ofDays(366)).toString();
+
+		callAs(member1, availabilityUri(group.getId(), START, exactlyMax))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.members.length()").value(4));
 	}
 
 	// ---------- helpers ----------

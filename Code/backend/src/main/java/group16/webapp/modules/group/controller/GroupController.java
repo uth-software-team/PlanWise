@@ -11,6 +11,7 @@ import group16.webapp.modules.group.dto.MemberResponse;
 import group16.webapp.modules.group.dto.RoleUpdateRequest;
 import group16.webapp.modules.group.service.GroupAvailabilityService;
 import group16.webapp.modules.group.service.GroupService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,7 +33,8 @@ import java.util.List;
  * UC-09 groups and members, plus the CG-11 availability endpoint. Group CRUD (GR-02) and member management (GR-03)
  * and availability (GR-04) are implemented. Errors: 404 missing group or target, 403 insufficient membership or role,
  * 409 DATA_CONFLICT for a duplicate member or when the last leader would leave or be demoted; availability adds
- * 400 INVALID_TIME_RANGE and 501 NOT_IMPLEMENTED while no calendar provider (CAL-01) exists.
+ * 400 INVALID_TIME_RANGE (empty, reversed or longer than 366 days) and 501 NOT_IMPLEMENTED while no calendar
+ * provider (CAL-01) exists.
  */
 @RestController
 @RequestMapping("/v1/groups")
@@ -94,6 +96,8 @@ public class GroupController {
     }
 
     /** CG-11: ACTIVE members see member ids and BUSY intervals only, within the half-open window [start, end). */
+    @Operation(description = "Half-open window [start, end). Requires start < end and end - start <= 366 days; "
+            + "otherwise 400 INVALID_TIME_RANGE.")
     @GetMapping("/{id}/availability")
     public ApiResponse<GroupAvailabilityResponse> getAvailability(@PathVariable Long id,
                                                                   @RequestParam Instant start,

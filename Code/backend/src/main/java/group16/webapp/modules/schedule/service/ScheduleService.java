@@ -78,7 +78,8 @@ public class ScheduleService implements ScheduleApi {
 
     @Transactional
     public ProposalBatchResponse generateProposal(Long userId, GenerateScheduleRequest request) {
-        if (!request.windowStart().isBefore(request.windowEnd())) {
+        if (!request.windowStart().isBefore(request.windowEnd())
+                || DateUtils.exceedsMaxQueryRange(request.windowStart(), request.windowEnd())) {
             throw new AppException(ErrorCode.INVALID_TIME_RANGE);
         }
         AvailabilityApi availabilityApi = availabilityApiProvider.getIfAvailable();

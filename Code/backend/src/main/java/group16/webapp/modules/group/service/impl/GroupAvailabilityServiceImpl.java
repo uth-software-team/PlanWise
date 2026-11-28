@@ -2,6 +2,7 @@ package group16.webapp.modules.group.service.impl;
 
 import group16.webapp.common.exception.AppException;
 import group16.webapp.common.exception.ErrorCode;
+import group16.webapp.common.util.DateUtils;
 import group16.webapp.modules.auth.api.UserApi;
 import group16.webapp.modules.auth.api.UserSummary;
 import group16.webapp.modules.availability.api.CalendarApi;
@@ -41,7 +42,7 @@ public class GroupAvailabilityServiceImpl implements GroupAvailabilityService {
         userApi.findById(callerId)
                 .filter(UserSummary::active)
                 .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
-        if (!start.isBefore(end)) {
+        if (!start.isBefore(end) || DateUtils.exceedsMaxQueryRange(start, end)) {
             throw new AppException(ErrorCode.INVALID_TIME_RANGE);
         }
         groupAccessApi.requireMember(groupId, callerId);

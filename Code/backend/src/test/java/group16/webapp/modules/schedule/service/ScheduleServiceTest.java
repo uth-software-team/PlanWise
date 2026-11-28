@@ -30,6 +30,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -84,6 +85,29 @@ class ScheduleServiceTest {
         AppException ex = assertThrows(AppException.class,
                 () -> service.generateProposal(1L, new GenerateScheduleRequest(start, end, null)));
         assertEquals(ErrorCode.NO_AVAILABILITY_RULE, ex.getErrorCode());
+    }
+
+    @Test
+    void generateProposal_rejectsWindowLongerThan366DaysBeforeRuleCheckOrProposalReplacement() {
+        Instant start = Instant.parse("2026-11-23T00:00:00Z");
+        Instant end = start.plus(Duration.ofDays(366)).plusSeconds(1);
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.generateProposal(1L, new GenerateScheduleRequest(start, end, null)));
+        assertEquals(ErrorCode.INVALID_TIME_RANGE, ex.getErrorCode());
+        verifyNoInteractions(availabilityProvider, availabilityApi, proposalRepository, sessionRepository);
+    }
+
+    @Test
+    void generateProposal_acceptsWindowOfExactly366DaysAndReachesRuleCheck() {
+        Instant start = Instant.parse("2026-11-23T00:00:00Z");
+        Instant end = start.plus(Duration.ofDays(366));
+        when(availabilityApi.hasActiveRule(1L)).thenReturn(false);
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.generateProposal(1L, new GenerateScheduleRequest(start, end, null)));
+        assertEquals(ErrorCode.NO_AVAILABILITY_RULE, ex.getErrorCode());
+        verifyNoInteractions(proposalRepository, sessionRepository);
     }
 
     @Test
