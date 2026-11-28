@@ -191,7 +191,7 @@ class ProfileControllerTests {
 
 	private String tokenForSubject(String subject) {
 		Instant now = Instant.now();
-		JwtClaimsSet claims = JwtClaimsSet.builder().subject(subject)
+		JwtClaimsSet claims = JwtClaimsSet.builder().issuer(JwtService.ISSUER).subject(subject)
 				.issuedAt(now).expiresAt(now.plus(5, ChronoUnit.MINUTES)).build();
 		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
 				.getTokenValue();

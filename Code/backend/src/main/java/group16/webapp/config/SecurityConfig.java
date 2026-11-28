@@ -1,6 +1,7 @@
 package group16.webapp.config;
 
 import group16.webapp.common.exception.ErrorCode;
+import group16.webapp.modules.auth.service.JwtService;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -35,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * - Stateless JWT (HS256) authentication via Spring OAuth2 Resource Server
@@ -54,6 +57,9 @@ public class SecurityConfig {
 
     /** HS256 requires a key of at least 256 bits. */
     static final int MIN_JWT_SECRET_BYTES = 32;
+
+    /** Prefix of the placeholder values in .env.example; a copied placeholder is a publicly known key. */
+    static final String PLACEHOLDER_SECRET_PREFIX = "change-me";
 
     private final SecretKey secretKey;
     private final List<String> allowedOrigins;
@@ -87,7 +93,10 @@ public class SecurityConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        // Default exp/nbf checks plus iss == "planwise" (the issuer JwtService writes).
+        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(JwtService.ISSUER));
+        return decoder;
     }
 
     @Bean
@@ -127,6 +136,10 @@ public class SecurityConfig {
         if (jwtSecret == null || jwtSecret.isBlank()) {
             throw new IllegalStateException(
                     "JWT_SECRET is not set. Define it in Code/backend/.env or as an environment variable.");
+        }
+        if (jwtSecret.strip().toLowerCase(Locale.ROOT).startsWith(PLACEHOLDER_SECRET_PREFIX)) {
+            throw new IllegalStateException("JWT_SECRET is still the .env.example placeholder. Replace it with a "
+                    + "random value of at least " + MIN_JWT_SECRET_BYTES + " bytes (e.g. openssl rand -base64 48).");
         }
         byte[] bytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < MIN_JWT_SECRET_BYTES) {
