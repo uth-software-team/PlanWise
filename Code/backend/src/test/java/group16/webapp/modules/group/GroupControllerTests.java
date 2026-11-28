@@ -3,6 +3,7 @@ package group16.webapp.modules.group;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.never;
@@ -44,8 +45,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * GR-02 group CRUD through the real API (H2, real JWTs). No test-managed transaction: each request commits like in
- * production, and {@link #cleanUp()} removes every row this class created, independent of the base class setup.
+ * GR-02/GR-03 groups and members through the real API (H2, real JWTs), including the single-LEADER rules (D16).
+ * No test-managed transaction: each request commits like in production, and {@link #cleanUp()} removes every row this
+ * class created, independent of the base class setup. H2 has no V11 index; the index itself and the write order it
+ * requires are covered by the {@code @Tag("pg")} tests.
  */
 class GroupControllerTests extends AuthenticatedMvcTest {
 
@@ -388,11 +391,11 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 	@Test
 	void addingActiveMemberReturns409AndKeepsRoleAndTimestamps() throws Exception {
 		TeamGroup group = seedGroup(caller(), "Team");
-		User target = newUser("other-leader@example.com");
-		addMember(group, target, GroupRole.LEADER);
+		User target = newUser("member@example.com");
+		addMember(group, target, GroupRole.MEMBER);
 		GroupSnapshot before = snapshot(row(group, target));
 
-		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("other-leader@example.com"))
+		callAuthenticated(HttpMethod.POST, membersUri(group), addBody("member@example.com"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
 
@@ -424,102 +427,32 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 
 	// ---------- PATCH /v1/groups/{id}/members/{userId} ----------
 
+	/** B5: PATCH cannot change a role (D16). */
 	@Test
-	void leaderPromotesMemberAndSameRoleRequestIsNoOp() throws Exception {
-		TeamGroup group = seedGroup(caller(), "Team");
-		User target = newUser("target@example.com");
-		addMember(group, target, GroupRole.MEMBER);
-
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, target), roleBody("LEADER"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.userId").value(target.getId()))
-				.andExpect(jsonPath("$.data.role").value("LEADER"));
-		assertThat(row(group, target).getRole()).isEqualTo(GroupRole.LEADER);
-
-		GroupSnapshot before = snapshot(row(group, target));
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, target), roleBody("LEADER"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.role").value("LEADER"));
-		assertThat(snapshot(row(group, target))).isEqualTo(before);
-	}
-
-	@Test
-	void ordinaryLeaderPromotesAndDemotesPeersIncludingCreator() throws Exception {
-		User creator = newUser("creator@example.com");
-		User ordinary = caller();
-		TeamGroup group = seedGroup(creator, "Team");
-		addMember(group, ordinary, GroupRole.LEADER);
+	void sameRoleIsNoOpAndAnyRoleChangeIs409() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(caller, "Team");
 		User member = newUser("member@example.com");
 		addMember(group, member, GroupRole.MEMBER);
+		GroupSnapshot leaderBefore = snapshot(row(group, caller));
+		GroupSnapshot memberBefore = snapshot(row(group, member));
 
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("LEADER")).andExpect(status().isOk());
-
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, creator), roleBody("MEMBER"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.role").value("MEMBER"));
 		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("MEMBER"))
 				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.userId").value(member.getId()))
 				.andExpect(jsonPath("$.data.role").value("MEMBER"));
-
-		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.MEMBER);
-		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-		assertThat(row(group, member).getRole()).isEqualTo(GroupRole.MEMBER);
-		assertThat(row(group, ordinary).getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
-				.isEqualTo(creator.getId());
-	}
-
-	@Test
-	void creatorDemotesAnotherLeader() throws Exception {
-		TeamGroup group = seedGroup(caller(), "Team");
-		User other = newUser("other@example.com");
-		addMember(group, other, GroupRole.LEADER);
-
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, other), roleBody("MEMBER"))
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, caller), roleBody("LEADER"))
 				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.role").value("MEMBER"));
-
-		assertThat(row(group, other).getRole()).isEqualTo(GroupRole.MEMBER);
-		assertThat(row(group, other).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-	}
-
-	@Test
-	void creatorSelfDemotionKeepsCreatedByAndRemainingLeadersManagePeers() throws Exception {
-		User creator = caller();
-		TeamGroup group = seedGroup(creator, "Team");
-		User leader2 = newUser("leader2@example.com");
-		User leader3 = newUser("leader3@example.com");
-		addMember(group, leader2, GroupRole.LEADER);
-		addMember(group, leader3, GroupRole.LEADER);
-
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, creator), roleBody("MEMBER"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.role").value("MEMBER"));
-
-		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.MEMBER);
-		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
-				.isEqualTo(creator.getId());
-		// The remaining (non-creator) leaders demote each other like any peer, while another leader remains.
-		callAs(leader2, HttpMethod.PATCH, memberUri(group, leader3), roleBody("MEMBER"))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.data.role").value("MEMBER"));
-		assertThat(row(group, leader3).getRole()).isEqualTo(GroupRole.MEMBER);
-		assertThat(row(group, leader3).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-		assertThat(row(group, leader2).getRole()).isEqualTo(GroupRole.LEADER);
-	}
-
-	@Test
-	void lastLeaderSelfDemotionReturns409AndKeepsRole() throws Exception {
-		TeamGroup group = seedGroup(caller(), "Team");
-		User member = newUser("member@example.com");
-		addMember(group, member, GroupRole.MEMBER);
-		GroupSnapshot before = snapshot(row(group, caller()));
-
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, caller()), roleBody("MEMBER"))
+				.andExpect(jsonPath("$.data.role").value("LEADER"));
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, member), roleBody("LEADER"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, caller), roleBody("MEMBER"))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
 
-		assertThat(snapshot(row(group, caller()))).isEqualTo(before);
+		assertThat(snapshot(row(group, caller))).isEqualTo(leaderBefore);
+		assertThat(snapshot(row(group, member))).isEqualTo(memberBefore);
 	}
 
 	@Test
@@ -530,11 +463,11 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		deactivate(addMember(group, inactive, GroupRole.MEMBER));
 		User stranger = newUser("stranger@example.com");
 
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, inactive), roleBody("LEADER"))
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, inactive), roleBody("MEMBER"))
 				.andExpect(status().isNotFound());
-		callAuthenticated(HttpMethod.PATCH, memberUri(group, stranger), roleBody("LEADER"))
+		callAuthenticated(HttpMethod.PATCH, memberUri(group, stranger), roleBody("MEMBER"))
 				.andExpect(status().isNotFound());
-		callAuthenticated(HttpMethod.PATCH, "/v1/groups/999999/members/" + stranger.getId(), roleBody("LEADER"))
+		callAuthenticated(HttpMethod.PATCH, "/v1/groups/999999/members/" + stranger.getId(), roleBody("MEMBER"))
 				.andExpect(status().isNotFound());
 		assertThat(row(group, inactive).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
 
@@ -548,6 +481,123 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		callAuthenticated(HttpMethod.PATCH, memberUri(other, otherMember), roleBody("LEADER"))
 				.andExpect(status().isForbidden());
 		assertThat(row(other, otherMember).getRole()).isEqualTo(GroupRole.MEMBER);
+	}
+
+	// ---------- POST /v1/groups/{id}/transfer-leadership ----------
+
+	@Test
+	void transferMakesCallerMemberAndTargetTheOnlyLeader() throws Exception {
+		User creator = caller();
+		TeamGroup group = seedGroup(creator, "Team");
+		User target = newUser("target@example.com");
+		User other = newUser("other@example.com");
+		addMemberAt(group, target, GroupRole.MEMBER, at(1));
+		addMemberAt(group, other, GroupRole.MEMBER, at(2));
+
+		callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(target))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.id").value(group.getId()))
+				.andExpect(jsonPath("$.data.createdByUserId").value(creator.getId()))
+				.andExpect(jsonPath("$.data.members", hasSize(3)))
+				.andExpect(jsonPath("$.data.members[0].userId").value(creator.getId()))
+				.andExpect(jsonPath("$.data.members[0].role").value("MEMBER"))
+				.andExpect(jsonPath("$.data.members[1].userId").value(target.getId()))
+				.andExpect(jsonPath("$.data.members[1].role").value("LEADER"))
+				.andExpect(jsonPath("$.data.members[2].role").value("MEMBER"))
+				// The successor is now computed for the new LEADER: the creator joined first.
+				.andExpect(jsonPath("$.data.successorUserId").value(creator.getId()));
+
+		assertThat(activeLeaderIds(group)).containsExactly(target.getId());
+		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
+				.isEqualTo(creator.getId());
+		// The new LEADER manages the group; the creator has no extra authority.
+		callAs(target, HttpMethod.PUT, "/v1/groups/" + group.getId(), "{\"groupName\":\"Renamed\"}")
+				.andExpect(status().isOk());
+		callAs(target, HttpMethod.DELETE, memberUri(group, creator), null).andExpect(status().isNoContent());
+		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+	}
+
+	/** B1 (i)-(iii) and B10: after a transfer the former LEADER is an ordinary MEMBER. */
+	@Test
+	void formerLeaderLosesEveryManagementRightAfterTransfer() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User b = newUser("b@example.com");
+		User c = newUser("c@example.com");
+		addMemberAt(group, b, GroupRole.MEMBER, at(1));
+		addMemberAt(group, c, GroupRole.MEMBER, at(2));
+		callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(b)).andExpect(status().isOk());
+		TeamGroup before = groupRepository.findById(group.getId()).orElseThrow();
+
+		for (ResultActions call : List.of(
+				callAuthenticated(HttpMethod.DELETE, memberUri(group, b), null),
+				callAuthenticated(HttpMethod.DELETE, memberUri(group, c), null),
+				callAuthenticated(HttpMethod.POST, membersUri(group), addBody("nobody@example.com")),
+				callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(c)),
+				callAuthenticated(HttpMethod.PUT, "/v1/groups/" + group.getId(), "{\"groupName\":\"Hijacked\"}"),
+				callAuthenticated(HttpMethod.PATCH, memberUri(group, c), roleBody("MEMBER")))) {
+			call.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		}
+		// B10: a stale tab still sends the old successor.
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + b.getId(), null)
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("STALE_VERSION"));
+
+		assertThat(activeLeaderIds(group)).containsExactly(b.getId());
+		assertThat(row(group, a).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row(group, a).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(group, b).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(row(group, c).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(groupRepository.findById(group.getId()).orElseThrow().getGroupName())
+				.isEqualTo(before.getGroupName());
+	}
+
+	/** B1 (iv): a fresh setup where the former LEADER leaves as a MEMBER. */
+	@Test
+	void formerLeaderLeavesAsMemberWithoutSuccessor() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User b = newUser("b@example.com");
+		addMember(group, b, GroupRole.MEMBER);
+		callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(b)).andExpect(status().isOk());
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a), null).andExpect(status().isNoContent());
+
+		assertThat(row(group, a).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, a).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(activeLeaderIds(group)).containsExactly(b.getId());
+	}
+
+	/** B2 and B13: every rejected transfer changes nothing. */
+	@Test
+	void rejectedTransfersChangeNothing() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(caller, "Team");
+		User member = newUser("member@example.com");
+		addMember(group, member, GroupRole.MEMBER);
+		User former = newUser("former@example.com");
+		deactivate(addMember(group, former, GroupRole.MEMBER));
+		User disabled = newUser("disabled@example.com");
+		addMember(group, disabled, GroupRole.MEMBER);
+		deactivateAccount(disabled);
+		User stranger = newUser("stranger@example.com");
+		List<GroupSnapshot> before = snapshots(group);
+
+		callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(caller))
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+		for (User target : List.of(stranger, former, disabled)) {
+			callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(target))
+					.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+		}
+		callAs(member, HttpMethod.POST, transferUri(group), transferBody(member))
+				.andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+		callAuthenticated(HttpMethod.POST, "/v1/groups/999999/transfer-leadership", transferBody(member))
+				.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+		callAuthenticated(HttpMethod.POST, transferUri(group), "{\"newLeaderUserId\":null}")
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+		assertThat(snapshots(group)).isEqualTo(before);
 	}
 
 	// ---------- DELETE /v1/groups/{id}/members/{userId} ----------
@@ -616,65 +666,182 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		assertThat(row(foreign, foreignMember).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
 	}
 
+	/** D1: the query is checked before the group is loaded. */
 	@Test
-	void ordinaryLeaderRemovesCreatorAndPeerLeader() throws Exception {
-		User creator = newUser("creator@example.com");
-		User ordinary = caller();
-		TeamGroup group = seedGroup(creator, "Team");
-		addMember(group, ordinary, GroupRole.LEADER);
-		User peer = newUser("peer@example.com");
-		addMember(group, peer, GroupRole.LEADER);
-
-		callAuthenticated(HttpMethod.DELETE, memberUri(group, creator), null).andExpect(status().isNoContent());
-		callAuthenticated(HttpMethod.DELETE, memberUri(group, peer), null).andExpect(status().isNoContent());
-
-		// Rows are kept: INACTIVE with the former role; the caller remains the only ACTIVE LEADER.
-		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
-		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(row(group, peer).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
-		assertThat(row(group, peer).getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(row(group, ordinary).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-		assertThat(row(group, ordinary).getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
-				.isEqualTo(creator.getId());
-	}
-
-	@Test
-	void creatorSelfLeaveKeepsCreatedByAndRemainingLeaderRemovesPeerLeader() throws Exception {
-		User creator = caller();
-		TeamGroup group = seedGroup(creator, "Team");
-		User leader2 = newUser("leader2@example.com");
-		User leader3 = newUser("leader3@example.com");
+	void removingWithSuccessorQueryIs400EvenForMissingGroup() throws Exception {
+		User caller = caller();
+		TeamGroup group = seedGroup(caller, "Team");
 		User member = newUser("member@example.com");
-		addMember(group, leader2, GroupRole.LEADER);
-		addMember(group, leader3, GroupRole.LEADER);
 		addMember(group, member, GroupRole.MEMBER);
 
-		callAuthenticated(HttpMethod.DELETE, memberUri(group, creator), null).andExpect(status().isNoContent());
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, member) + "?expectedSuccessorUserId=" + caller.getId(),
+				null).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+		callAuthenticated(HttpMethod.DELETE, "/v1/groups/999999/members/" + member.getId()
+				+ "?expectedSuccessorUserId=1", null)
+				.andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_INPUT"));
 
-		assertThat(row(group, creator).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
-		assertThat(row(group, creator).getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(groupRepository.findById(group.getId()).orElseThrow().getCreatedByUserId())
-				.isEqualTo(creator.getId());
-		callAs(leader2, HttpMethod.DELETE, memberUri(group, member), null).andExpect(status().isNoContent());
-		callAs(leader2, HttpMethod.DELETE, memberUri(group, leader3), null).andExpect(status().isNoContent());
-		assertThat(row(group, leader3).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
-		assertThat(row(group, leader3).getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(row(group, leader2).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-		assertThat(row(group, leader2).getRole()).isEqualTo(GroupRole.LEADER);
+		assertThat(row(group, member).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
 	}
 
+	/** D8: the client still believes the caller is the LEADER. */
 	@Test
-	void lastLeaderSelfLeaveReturns409AndKeepsMembership() throws Exception {
-		TeamGroup group = seedGroup(caller(), "Team");
-		addMember(group, newUser("member@example.com"), GroupRole.MEMBER);
-		GroupSnapshot before = snapshot(row(group, caller()));
+	void memberLeavingWithSuccessorQueryIsStaleAndStays() throws Exception {
+		User caller = caller();
+		User leader = newUser("leader@example.com");
+		TeamGroup group = seedGroup(leader, "Team");
+		addMember(group, caller, GroupRole.MEMBER);
+		GroupSnapshot before = snapshot(row(group, caller));
 
-		callAuthenticated(HttpMethod.DELETE, memberUri(group, caller()), null)
-				.andExpect(status().isConflict())
-				.andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, caller) + "?expectedSuccessorUserId=" + leader.getId(),
+				null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
 
-		assertThat(snapshot(row(group, caller()))).isEqualTo(before);
+		assertThat(snapshot(row(group, caller))).isEqualTo(before);
+	}
+
+	/** B6 and D11: the earliest-joined other member with an active account becomes LEADER. */
+	@Test
+	void leaderLeavingWithExpectedSuccessorHandsOverToEarliestMember() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User late = newUser("late@example.com");
+		User early = newUser("early@example.com");
+		addMemberAt(group, late, GroupRole.MEMBER, at(20));
+		addMemberAt(group, early, GroupRole.MEMBER, at(10));
+
+		callAuthenticated(HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(early.getId()));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + early.getId(), null)
+				.andExpect(status().isNoContent());
+
+		assertThat(row(group, a).getStatus()).isEqualTo(MembershipStatus.INACTIVE);
+		assertThat(row(group, a).getLeftAt()).isNotNull();
+		assertThat(activeLeaderIds(group)).containsExactly(early.getId());
+		assertThat(row(group, late).getRole()).isEqualTo(GroupRole.MEMBER);
+	}
+
+	/** B7: equal joinedAt falls back to the smaller membership id. */
+	@Test
+	void successorTieOnJoinedAtUsesSmallerMembershipId() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User first = newUser("first@example.com");
+		User second = newUser("second@example.com");
+		GroupMember firstRow = addMemberAt(group, first, GroupRole.MEMBER, at(5));
+		GroupMember secondRow = addMemberAt(group, second, GroupRole.MEMBER, at(5));
+		assertThat(firstRow.getId()).isLessThan(secondRow.getId());
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + second.getId(), null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + first.getId(), null)
+				.andExpect(status().isNoContent());
+
+		assertThat(activeLeaderIds(group)).containsExactly(first.getId());
+	}
+
+	/** D10 and B9: a LEADER must name the current successor; a promoted MEMBER's stale tab sends none. */
+	@Test
+	void leaderLeavingWithoutOrWithWrongSuccessorIsStaleAndStays() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User b = newUser("b@example.com");
+		User c = newUser("c@example.com");
+		addMemberAt(group, b, GroupRole.MEMBER, at(1));
+		addMemberAt(group, c, GroupRole.MEMBER, at(2));
+		List<GroupSnapshot> before = snapshots(group);
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a), null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + c.getId(), null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
+		assertThat(snapshots(group)).isEqualTo(before);
+
+		// B9: B was promoted, but B's tab still shows the MEMBER dialog and sends no successor.
+		callAuthenticated(HttpMethod.POST, transferUri(group), transferBody(b)).andExpect(status().isOk());
+		callAs(b, HttpMethod.DELETE, memberUri(group, b), null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
+		assertThat(row(group, b).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(activeLeaderIds(group)).containsExactly(b.getId());
+	}
+
+	/** B11 and D9: a LEADER without any member to hand over to cannot leave. */
+	@Test
+	void soleLeaderCannotLeaveWithOrWithoutQuery() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		GroupSnapshot before = snapshot(row(group, a));
+
+		callAuthenticated(HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(nullValue()));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a), null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=1", null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+
+		assertThat(snapshot(row(group, a))).isEqualTo(before);
+	}
+
+	/** B14 and B15: members with an inactive account are skipped as successors. */
+	@Test
+	void successorSkipsMembersWithInactiveAccounts() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User disabled = newUser("disabled@example.com");
+		User c = newUser("c@example.com");
+		addMemberAt(group, disabled, GroupRole.MEMBER, at(1));
+		addMemberAt(group, c, GroupRole.MEMBER, at(2));
+		deactivateAccount(disabled);
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + disabled.getId(),
+				null).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("STALE_VERSION"));
+		assertThat(activeLeaderIds(group)).containsExactly(a.getId());
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + c.getId(), null)
+				.andExpect(status().isNoContent());
+		assertThat(activeLeaderIds(group)).containsExactly(c.getId());
+		assertThat(row(group, disabled).getRole()).isEqualTo(GroupRole.MEMBER);
+		assertThat(row(group, disabled).getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+	}
+
+	/** B16: only members with inactive accounts remain, so there is no successor. */
+	@Test
+	void leaderWithOnlyInactiveAccountsLeftCannotLeave() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User disabled = newUser("disabled@example.com");
+		addMember(group, disabled, GroupRole.MEMBER);
+		deactivateAccount(disabled);
+		List<GroupSnapshot> before = snapshots(group);
+
+		callAuthenticated(HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(nullValue()));
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a), null)
+				.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
+
+		assertThat(snapshots(group)).isEqualTo(before);
+	}
+
+	/** B17: every ACTIVE member sees the same successor, and it is the one DELETE accepts. */
+	@Test
+	void successorUserIdIsTheSameForLeaderAndMemberAndMatchesDelete() throws Exception {
+		User a = caller();
+		TeamGroup group = seedGroup(a, "Team");
+		User b = newUser("b@example.com");
+		User c = newUser("c@example.com");
+		addMemberAt(group, b, GroupRole.MEMBER, at(1));
+		addMemberAt(group, c, GroupRole.MEMBER, at(2));
+
+		callAuthenticated(HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(b.getId()));
+		// The successor and another MEMBER see the same value as the LEADER.
+		callAs(b, HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(b.getId()));
+		callAs(c, HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(b.getId()));
+
+		callAuthenticated(HttpMethod.DELETE, memberUri(group, a) + "?expectedSuccessorUserId=" + b.getId(), null)
+				.andExpect(status().isNoContent());
+		callAs(c, HttpMethod.GET, "/v1/groups/" + group.getId(), null)
+				.andExpect(jsonPath("$.data.successorUserId").value(c.getId()));
 	}
 
 	// ---------- GroupAccessApi ----------
@@ -737,6 +904,14 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 		return "{\"email\":\"" + email + "\"}";
 	}
 
+	private static String transferUri(TeamGroup group) {
+		return "/v1/groups/" + group.getId() + "/transfer-leadership";
+	}
+
+	private static String transferBody(User user) {
+		return "{\"newLeaderUserId\":" + user.getId() + "}";
+	}
+
 	private static String roleBody(String role) {
 		return "{\"role\":\"" + role + "\"}";
 	}
@@ -749,6 +924,22 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 
 	private static GroupSnapshot snapshot(GroupMember m) {
 		return new GroupSnapshot(m.getId(), m.getRole(), m.getStatus(), m.getJoinedAt(), m.getLeftAt());
+	}
+
+	private List<GroupSnapshot> snapshots(TeamGroup group) {
+		return memberRepository.findAll().stream()
+				.filter(m -> m.getGroupId().equals(group.getId()))
+				.sorted(java.util.Comparator.comparing(GroupMember::getId))
+				.map(GroupControllerTests::snapshot)
+				.toList();
+	}
+
+	private List<Long> activeLeaderIds(TeamGroup group) {
+		return memberRepository.findByGroupIdAndStatusOrderByJoinedAtAscIdAsc(group.getId(), MembershipStatus.ACTIVE)
+				.stream()
+				.filter(m -> m.getRole() == GroupRole.LEADER)
+				.map(GroupMember::getUserId)
+				.toList();
 	}
 
 	/** The caller created by AuthenticatedMvcTest (looked up, so nothing depends on setup order). */
@@ -769,8 +960,21 @@ class GroupControllerTests extends AuthenticatedMvcTest {
 	}
 
 	private GroupMember addMember(TeamGroup group, User user, GroupRole role) {
-		return memberRepository.save(new GroupMember(group.getId(), user.getId(), role,
-				Instant.now().truncatedTo(ChronoUnit.MILLIS)));
+		return addMemberAt(group, user, role, Instant.now().truncatedTo(ChronoUnit.MILLIS));
+	}
+
+	private GroupMember addMemberAt(TeamGroup group, User user, GroupRole role, Instant joinedAt) {
+		return memberRepository.save(new GroupMember(group.getId(), user.getId(), role, joinedAt));
+	}
+
+	/** A join time {@code minutes} after the seeded LEADER (who joined "now"), so the order is explicit. */
+	private static Instant at(int minutes) {
+		return Instant.now().truncatedTo(ChronoUnit.MILLIS).plus(minutes, ChronoUnit.MINUTES);
+	}
+
+	private void deactivateAccount(User user) {
+		user.deactivate();
+		userRepository.save(user);
 	}
 
 	/** Seeds the INACTIVE state directly (left_at is required for INACTIVE in V7). */

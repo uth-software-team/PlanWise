@@ -1,22 +1,28 @@
-# Runbook: chuyển sang một LEADER mỗi nhóm (D16, V11)
+# Runbook: chuyển sang một LEADER mỗi nhóm (D16, V11/V13)
 
 Người chạy: TV1, trên từng DB đang dùng (dev của từng thành viên, DB demo). File này chỉ có placeholder `<...>`; **không ghi id hay dữ liệu thật vào repo**.
 
-- V11 (`V11__enforce_single_active_leader_per_group.sql`) tạo partial unique index `uk_group_members_one_active_leader` (tối đa 1 LEADER ACTIVE mỗi nhóm). Guard trong V11 làm migration thất bại (và rollback sạch, không cần `flyway repair`) nếu có nhóm có thành viên ACTIVE mà số LEADER ACTIVE khác 1.
+- Index `uk_group_members_one_active_leader` (tối đa 1 LEADER ACTIVE mỗi nhóm). Lịch sử:
+  - **V11** tạo index (PR #58).
+  - **V12** bỏ index (PR rollback #59, bị merge nhầm ngày 2026-11-29).
+  - **V13** tạo lại index (PR bật lại D16).
+
+  Cả ba file giữ nguyên, không sửa. Guard trong V11 và V13 làm migration thất bại (và rollback sạch, không cần `flyway repair`) nếu có nhóm có thành viên ACTIVE mà số LEADER ACTIVE khác 1.
+- **Lần chuyển giao hiện tại dùng V13.** DB nào đã chạy code rollback (từ V12 tới trước V13) có thể có nhóm 2 LEADER, nên phải chạy lại M1–M6.
 - "Ứng viên đủ điều kiện" = membership `ACTIVE` **và** `users.is_active = true` (O10a).
 
 ## Chuyển giao M0–M6
 
 | Bước | Việc | Xong khi |
 |---|---|---|
-| M0 | **Trước khi merge PR backend:** chuẩn bị hai PR draft để rollback: (1) revert FE-GR-01b (khi 01b đã có); (2) revert backend **kèm** migration kế tiếp còn trống (ví dụ `V12__drop_single_active_leader_index.sql`), **giữ nguyên file V11**. Để CI chạy xong trên cả hai | Hai PR draft có CI pass |
+| M0 | **Trước khi merge PR backend:** chuẩn bị hai PR draft để rollback: (1) revert FE-GR-01b (khi 01b đã có); (2) revert backend **kèm** migration kế tiếp còn trống (hiện là `V14__drop_single_active_leader_index.sql`), **giữ nguyên V11–V13**. Title của cả hai PR bắt đầu bằng `[DO NOT MERGE]`, để ở dạng draft, chỉ chuyển sang ready ở bước R4. Để CI chạy xong trên cả hai | Hai PR draft có CI pass |
 | M1 | Dừng backend cũ trên DB đó, đóng các phiên psql có ghi dữ liệu. DB dùng chung: báo trong Software Group | Không còn tiến trình ghi |
 | M2 | Chạy M2a, M2b (chỉ đọc) | Có danh sách nhóm sai |
 | M3a | Sao lưu các dòng của nhóm sai ra CSV **ngoài repo** (có user id; không commit). Ghi lại người giữ quyền chọn cho từng nhóm | Có file |
 | M3 | Chạy khối M3 cho từng nhóm sai (và nhóm M2b nếu muốn thay LEADER có tài khoản bị vô hiệu hóa) | Mỗi khối `COMMIT` không lỗi |
 | M4 | Chạy lại M2a | 0 dòng |
-| M5 | Khởi động backend mới; Flyway áp dụng V11 | App lên bình thường |
-| M6 | `SELECT version, success FROM flyway_schema_history WHERE version = '11';` và `SELECT indexname FROM pg_indexes WHERE indexname = 'uk_group_members_one_active_leader';` | `success = true`; có index |
+| M5 | Khởi động backend mới; Flyway áp dụng V13 (và V11, V12 nếu DB chưa có) | App lên bình thường |
+| M6 | `SELECT version, success FROM flyway_schema_history WHERE version IN ('11', '12', '13');` và `SELECT indexname FROM pg_indexes WHERE indexname = 'uk_group_members_one_active_leader';` | Các dòng đều `success = true`; có index |
 
 ### M2a: nhóm có số LEADER ACTIVE khác 1
 ```sql
@@ -42,7 +48,7 @@ WHERE gm.status = 'ACTIVE' AND gm.role = 'LEADER' AND NOT u.is_active;
 ```
 
 ### M3: sửa một nhóm (điền `g` và `k`)
-Chỉ đổi cột `role` của các dòng ACTIVE: hạ mọi LEADER khác `k`, rồi nâng `k`. `status`, `joined_at`, `left_at` không đổi. Chạy được cả trước và sau V11 (hạ trước, nâng sau).
+Chỉ đổi cột `role` của các dòng ACTIVE: hạ mọi LEADER khác `k`, rồi nâng `k`. `status`, `joined_at`, `left_at` không đổi. Chạy được cả khi chưa có index và khi đã có (hạ trước, nâng sau).
 ```sql
 BEGIN;
 DO $$
@@ -75,8 +81,8 @@ Nguy cơ chính: backend cũ bỏ qua `expectedSuccessorUserId` và cho xóa LEA
 | R1 | Báo trong Software Group. **Dừng backend mới** trên mọi DB cần rollback | Không còn tiến trình backend nào trên DB đó |
 | R2 | Merge PR draft revert FE-GR-01b (M0; rebase nếu cần). Từng thành viên pull, khởi động lại `npm run dev`/bản build, **đóng mọi tab PlanWise rồi mở lại** | Từng người xác nhận không còn nút "Chuyển quyền", "Xóa", "Rời nhóm" |
 | R3 | Sao lưu toàn bộ `group_members` ra ngoài repo (`\copy` như M3a, bỏ điều kiện `WHERE`) | Có file |
-| R4 | Merge PR draft revert backend + V12 (M0; rebase nếu cần). Giữ nguyên file V11. V12: `DROP INDEX IF EXISTS uk_group_members_one_active_leader;` | CI pass |
-| R5 | Khởi động backend cũ; Flyway áp dụng V12 | V12 `success = true`; `pg_indexes` không còn index |
+| R4 | Bỏ `[DO NOT MERGE]` khỏi title, chuyển PR revert backend + V14 (M0) sang ready, rebase lên `develop` bằng `git rebase --onto` (không merge `develop` vào), rồi merge. Giữ nguyên V11–V13. V14: `DROP INDEX IF EXISTS uk_group_members_one_active_leader;` | CI pass |
+| R5 | Khởi động backend cũ; Flyway áp dụng V14 | V14 `success = true`; `pg_indexes` không còn index |
 | R6 | (Tùy chọn) Phục hồi vai trò từ CSV M3a: với mỗi dòng, `UPDATE group_members SET role = <csv.role> WHERE id = <csv.id> AND status = 'ACTIVE';`. Dòng đã đổi `status` sau M3 thì bỏ qua và ghi lại | TV1 đồng ý |
 | R7 | **Mở lại thao tác ghi** chỉ khi R2 đã xác nhận cho mọi người dùng và R5 đã kiểm xong. Báo trong Software Group | — |
 
