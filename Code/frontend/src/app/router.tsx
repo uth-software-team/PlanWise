@@ -7,6 +7,8 @@ import { APP_PAGES, DEFAULT_APP_PATH } from '@/app/nav'
 import { LoginPage } from '@/features/auth/components/LoginPage'
 import { RegisterPage } from '@/features/auth/components/RegisterPage'
 import { SettingsPage } from '@/features/auth/components/SettingsPage'
+import { GroupDetailPage } from '@/features/groups/components/GroupDetailPage'
+import { GroupsPage } from '@/features/groups/components/GroupsPage'
 import { SchedulePage } from '@/features/schedule/components/SchedulePage'
 import { NotFoundPage } from '@/routes/NotFoundPage'
 import { PlaceholderPage } from '@/routes/PlaceholderPage'
@@ -15,6 +17,7 @@ import { PublicOnlyRoute } from '@/routes/PublicOnlyRoute'
 
 /** Feature pages that replace a placeholder; paths stay those of APP_PAGES (FE-01 rule). */
 const FEATURE_PAGES: Partial<Record<string, ReactNode>> = {
+  '/groups': <GroupsPage />,
   '/schedule': <SchedulePage />,
   '/settings': <SettingsPage />,
 }
@@ -52,6 +55,8 @@ export const router = createBrowserRouter([
               />
             ),
           })),
+          // Detail pages under a menu path; the sidebar keeps the parent item active (findNavItem).
+          { path: '/groups/:groupId', element: <GroupDetailPage /> },
         ],
       },
     ],

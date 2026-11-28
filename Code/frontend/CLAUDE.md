@@ -3,7 +3,7 @@
 General rules (approval workflow, git, security, source of truth) are in the root `CLAUDE.md`. This file adds frontend rules.
 
 ## Status
-**Scaffolded (FE-00) + router/layout/auth guard (FE-01) + API client, 401 handling and OpenAPI types (FE-02) + login/register/profile (FE-AU).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router.
+**Scaffolded (FE-00) + router/layout/auth guard (FE-01) + API client, 401 handling and OpenAPI types (FE-02) + login/register/profile (FE-AU) + groups list/create/detail/members, transfer, leave, remove (FE-GR-01a/01b).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router.
 Base UI on the approved API contract, not guesses.
 
 ## Runtime
@@ -33,7 +33,7 @@ Don't add other UI/state libraries without approval.
 - Format: `npm run format` / `npm run format:check` (Prettier)
 - Add shadcn component: `npx shadcn@4.23.0 add <name>`
 - API types: `npm run gen:api` regenerates `src/api/schema.d.ts` from `docs/api/openapi-v1.json` (generated, committed, ignored by ESLint/Prettier; never edit by hand). Response schemas in the snapshot have no `required`, so response fields are optional in these types.
-- API client checks: `npm run check:api-client` (T1–T13, fake fetch, no backend; T10 field errors, T11 safe redirect, T12 logout, T13 current-user store); `npm run check:api-client -- --base http://localhost:5173/api/v1` with `PLANWISE_CHECK_TOKEN` + `PLANWISE_CHECK_EMAIL` runs I2–I3 against a running backend.
+- API client checks: `npm run check:api-client` (T1–T15, fake fetch, no backend; T10 field errors, T11 safe redirect, T12 logout, T13 current-user store, T14–T15 group detail store); `npm run check:api-client -- --base http://localhost:5173/api/v1` with `PLANWISE_CHECK_TOKEN` + `PLANWISE_CHECK_EMAIL` runs I2–I3 against a running backend.
 
 ## API client (FE-02)
 - `src/lib/apiClient.ts`: `apiRequest<T>(path, init)` with base `VITE_API_BASE_URL` (default `/api/v1`); unwraps `ApiResponse.data`, throws `ApiError{status, code, conflicts, fieldErrors}`. `fieldErrors` is read only for 400 when `data` is a flat `{field: message}` map (INVALID_INPUT, INVALID_TIME_RANGE); otherwise `{}`.
@@ -50,6 +50,16 @@ Don't add other UI/state libraries without approval.
 - Token (CG-04): `src/lib/auth-token.ts`, key `planwise.accessToken` in `localStorage`. Always change it via `setToken`/`clearToken`; guards use `useHasToken()` and react to changes in this tab and other tabs (`storage` event). Guard checks presence only; an expired or invalid token is cleared by the API client on its first 401 (FE-02). It is the only token store: `apiClient` reads it through `getAuthToken`/`setAuthToken`. The old key `planwise_token` is deleted and never read. Logout = `signOut()` from `features/auth/session.ts` (menu and Settings): `clearToken()` first (works offline), then a best-effort `POST /auth/logout` with the old token sent explicitly; `ProtectedRoute` then goes to `/login?redirect=<current page>`.
 - Current user: `useCurrentUser()` (`features/auth/session.ts`) is bound to the stored token; a token change re-fetches `/users/me`, and GET/PUT results for an older token are dropped. After `PUT /users/me`, call `setCurrentUser(user, tokenSentWithPut)` so the user menu updates.
 - Feature tasks replace a placeholder by pointing its route at `features/<module>` pages; keep paths stable.
+- Detail routes under a menu path are added next to the `APP_PAGES` routes (e.g. `/groups/:groupId`); `findNavItem` keeps the parent item active.
+
+## Groups (FE-GR-01a/01b)
+- `features/groups`: `/groups` (my groups, "Tạo nhóm") and `/groups/:groupId` (info, members in backend order, "add member by email" for the LEADER only, shown once `useCurrentUser()` is ready).
+- `groupDetailStore.ts` (rules B2): each request carries `{token, groupId, epoch}`; the epoch changes on open, token change and close, so late results of another page, group or account are dropped. GETs also carry a counter (newest wins). Writes: `busy` while a write and its reload are in flight; 403/404/409 reload the group before the error is shown; a result for an old context returns `stale` and changes nothing.
+- Dialogs use `features/groups/components/GroupDialog.tsx` (Radix Dialog: focus trap, Esc, focus return). `components/ui/dialog.tsx` has none of these; don't use it for new dialogs.
+- GET 403/404: no group data stays on screen, only a link back to `/groups`.
+- Every write goes through `runWrite` in the store (one rule set). Transfer applies the returned `GroupResponse` (no extra GET). Leave calls `onLeft` (navigate to `/groups`) right after the 204, with nothing awaited in between; a leave that ends after the page, group or account changed never navigates.
+- D16 UI: the LEADER sees "Chuyển quyền" / "Xóa" on other members; everyone sees "Rời nhóm". The leave dialog has three variants from the loaded group (MEMBER; LEADER naming `successorUserId`, sent as `expectedSuccessorUserId`; LEADER without successor, no confirm). On STALE_VERSION/DATA_CONFLICT the group is reloaded and the dialog stays open with the new variant. Never compute the successor in the FE.
+- `GroupDialog` returns focus to the opener, or to `focusFallback` (the "Thành viên" heading) when the opener is gone. The `destructive` button variant's focus ring is below 3:1: add `focus-visible:ring-ring` when using it.
 
 ## Design & accessibility
 - Team design (`PlanWise Document/PlanWise AI Web Design/`) is the source of truth. Theme tokens (indigo) live in `src/index.css`; use semantic classes (`bg-primary`, `text-muted-foreground`, …), not raw colors, inside the app shell.
