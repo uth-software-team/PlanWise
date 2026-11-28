@@ -33,7 +33,8 @@ Never run migrations or data-changing commands without approval.
 - D5 Error codes from the design doc (see REST API).
 - D6 The design doc contains BR-01..BR-15 and HC-01..HC-09 (no BR-16..BR-32).
 - D7 AI provider: Google Gemini, as in the design doc (timeout 5 s, BR-12).
-- D8 No system-wide roles (actors: Guest, User). LEADER/MEMBER are per group, checked in services by `groupId`. The creator starts as LEADER; `team_groups.created_by_user_id` is historical data and grants no extra authority. Any ACTIVE LEADER of the same group may demote or remove another LEADER, including the creator; at least one ACTIVE LEADER must remain (409 `DATA_CONFLICT` on the last leader's self-demotion or self-removal). (TV1, 2026-11-27)
+- D8 No system-wide roles (actors: Guest, User). LEADER/MEMBER are per group, checked in services by `groupId`. The creator starts as LEADER; `team_groups.created_by_user_id` is historical data and grants no extra authority. (TV1, 2026-11-27; LEADER rules replaced by D16)
+- D16 A group with at least one ACTIVE member has exactly one ACTIVE LEADER (V11 partial unique index `uk_group_members_one_active_leader` = at most one; the service keeps at least one). LEADER changes only by `POST /v1/groups/{id}/transfer-leadership` or by the LEADER leaving with a successor: `DELETE .../members/{self}?expectedSuccessorUserId=` must equal `GroupResponse.successorUserId` (first other ACTIVE member with an active account, by joinedAt then membership id); otherwise 409 `STALE_VERSION`, and 409 `DATA_CONFLICT` when there is no successor. PATCH role cannot change a role (same role 200, else 409 `DATA_CONFLICT`). The LEADER cannot be removed. Hand-over demotes/deactivates the old LEADER and flushes before promoting. Known limitation: a LEADER whose own account is deactivated leaves the group unmanaged until TV1 runs the cutover M3 (`docs/db/single-leader-cutover.md`). (TV1, 2026-11-29)
 - D9 Audit columns only where the ERD has them; no `created_by`/`updated_by`.
 - D10 Tests: H2 `create-drop`, Flyway disabled. Migrations are PostgreSQL-only and are verified by Testcontainers `@Tag("pg")` tests (`./gradlew pgTest`, approved as G3, added by F-03).
 - D11 No refresh token in MVP (access JWT only).
@@ -72,7 +73,8 @@ Modular Monolith + Layered: Controller -> Service -> Repository -> PostgreSQL.
 - User confirms explicitly; re-check all HC in one transaction at confirm time, check `version` (409 `STALE_VERSION`), roll back the whole batch on any conflict (BR-10, BR-11).
 
 **Group & Assignment**
-- Group creator = LEADER (manages group, assigns tasks). MEMBER can ACCEPT/DECLINE; DECLINE requires a reason.
+- Group creator starts as the group's only LEADER (D16; manages group, assigns tasks). MEMBER can ACCEPT/DECLINE; DECLINE requires a reason.
+- Assignment rights are checked with `GroupAccessApi.requireLeader` on every request, never from `assigned_by_user_id`; after a transfer the new LEADER manages old assignments (AS-T1). The unlocked check-then-write race is accepted (O12a).
 - Assignment status: PENDING, ACCEPTED, DECLINED, REVOKED — independent from Task status.
 - One source record per task in `tasks`; never clone group tasks into personal tasks. Link via `task_assignments`.
 - Only ACCEPTED assignments enter a member's to-do list. Enforce authorization in backend.

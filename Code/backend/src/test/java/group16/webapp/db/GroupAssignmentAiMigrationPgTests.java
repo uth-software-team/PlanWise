@@ -20,7 +20,8 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * V7 team_groups/group_members (+ fk_tasks_group), V8 task_assignments and V9 ai_request_logs on real
+ * V7 team_groups/group_members (+ fk_tasks_group, V11 one ACTIVE LEADER per group), V8 task_assignments and V9
+ * ai_request_logs on real
  * PostgreSQL 16. Each rejected row breaks exactly one constraint, and the failing statement is the last one in
  * its test because PostgreSQL aborts the transaction after an error. Behaviour tests of the V8 partial unique
  * index belong to AS-PG. Data changes roll back after each test.
@@ -101,6 +102,24 @@ class GroupAssignmentAiMigrationPgTests extends PostgresContainerTest {
 		insertRow("group_members", member(groupId, userId));
 
 		assertRejected(() -> insertRow("group_members", member(groupId, userId)), "uk_group_members_group_user");
+	}
+
+	/** B12: V11 allows one ACTIVE LEADER per group; INACTIVE LEADER rows and other groups are not affected. */
+	@Test
+	void secondActiveLeaderInGroupIsRejected() {
+		long leaderId = insertUser("v11-leader@example.com");
+		long formerId = insertUser("v11-former@example.com");
+		long otherId = insertUser("v11-other@example.com");
+		long groupId = insertGroup(leaderId);
+		long otherGroupId = insertGroup(otherId);
+		insertRow("group_members", leader(groupId, leaderId));
+		insertRow("group_members", with(leader(groupId, formerId),
+				"status", "'INACTIVE'", "left_at", "CURRENT_TIMESTAMP"));
+		insertRow("group_members", leader(otherGroupId, otherId));
+		insertRow("group_members", member(otherGroupId, leaderId));
+
+		assertRejected(() -> insertRow("group_members", leader(groupId, otherId)),
+				"uk_group_members_one_active_leader");
 	}
 
 	@Test
@@ -294,11 +313,15 @@ class GroupAssignmentAiMigrationPgTests extends PostgresContainerTest {
 		List<String> names = jdbc.queryForList("SELECT indexname FROM pg_indexes WHERE tablename IN "
 				+ "('group_members', 'task_assignments', 'ai_request_logs')", String.class);
 		assertThat(names).contains("uk_group_members_group_user", "idx_group_members_user",
+				"uk_group_members_one_active_leader",
 				"uk_task_assignments_active_task", "idx_task_assignments_assignee_status", "idx_task_assignments_task",
 				"idx_ai_request_logs_user_created");
 		assertThat(jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'uk_task_assignments_active_task'",
 				String.class))
 				.contains("UNIQUE").contains("(task_id)").contains("'PENDING'").contains("'ACCEPTED'");
+		assertThat(jdbc.queryForObject(
+				"SELECT indexdef FROM pg_indexes WHERE indexname = 'uk_group_members_one_active_leader'", String.class))
+				.contains("UNIQUE").contains("(group_id)").contains("'LEADER'").contains("'ACTIVE'");
 	}
 
 	// ---------------------------------------------------------------- helpers
@@ -316,6 +339,10 @@ class GroupAssignmentAiMigrationPgTests extends PostgresContainerTest {
 		long memberId = insertUser(prefix + "-member@example.com");
 		long groupId = insertGroup(leaderId);
 		return new Fixture(leaderId, memberId, insertTask(leaderId, groupId));
+	}
+
+	private static Map<String, String> leader(long groupId, long userId) {
+		return with(member(groupId, userId), "role", "'LEADER'");
 	}
 
 	private static Map<String, String> member(long groupId, long userId) {
