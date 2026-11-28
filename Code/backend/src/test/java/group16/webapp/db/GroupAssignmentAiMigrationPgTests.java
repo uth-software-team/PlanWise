@@ -23,8 +23,8 @@ import java.util.stream.Stream;
  * V7 team_groups/group_members (+ fk_tasks_group, V11/V13 one ACTIVE LEADER per group), V8 task_assignments and V9
  * ai_request_logs on real
  * PostgreSQL 16. Each rejected row breaks exactly one constraint, and the failing statement is the last one in
- * its test because PostgreSQL aborts the transaction after an error. Behaviour tests of the V8 partial unique
- * index belong to AS-PG. Data changes roll back after each test.
+ * its test because PostgreSQL aborts the transaction after an error. The V8 partial unique index tests are AS-PG.
+ * Data changes roll back after each test.
  *
  * <p>The tasks rows use the V4 columns from TK-01; re-check them against the merged V4 before integration.
  */
@@ -249,6 +249,37 @@ class GroupAssignmentAiMigrationPgTests extends PostgresContainerTest {
 				Arguments.of("unknown assignee", Map.of("assignee_user_id", "-1"), "fk_task_assignments_assignee"),
 				Arguments.of("unknown assigner", Map.of("assigned_by_user_id", "-1"),
 						"fk_task_assignments_assigned_by"));
+	}
+
+	/** AS-PG (BR-04): a second PENDING/ACCEPTED assignment of the same task violates the partial unique index. */
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("activeAssignmentStates")
+	void secondActiveAssignmentOfSameTaskIsRejected(String caseName, Map<String, String> first) {
+		Fixture f = fixture("pg-assign-dup");
+		Map<String, String> firstRow = new LinkedHashMap<>(f.assignment());
+		firstRow.putAll(first);
+		insertRow("task_assignments", firstRow);
+		assertRejected(() -> insertRow("task_assignments", f.assignment()), "uk_task_assignments_active_task");
+	}
+
+	static Stream<Arguments> activeAssignmentStates() {
+		return Stream.of(
+				Arguments.of("PENDING then PENDING", Map.<String, String>of()),
+				Arguments.of("ACCEPTED then PENDING",
+						Map.of("status", "'ACCEPTED'", "responded_at", "CURRENT_TIMESTAMP")));
+	}
+
+	/** AS-PG: DECLINED and REVOKED rows are outside the index, so the task can be assigned again. */
+	@Test
+	void declinedAndRevokedAssignmentsAllowANewPendingOne() {
+		Fixture f = fixture("pg-assign-again");
+		insertRow("task_assignments", with(f.assignment(), "status", "'DECLINED'",
+				"decline_reason", "'Busy'", "responded_at", "CURRENT_TIMESTAMP"));
+		insertRow("task_assignments", with(f.assignment(), "status", "'REVOKED'"));
+		insertRow("task_assignments", f.assignment());
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_assignments WHERE task_id = ?", Long.class,
+				f.taskId())).isEqualTo(3L);
 	}
 
 	// ---------------------------------------------------------------- V9 ai_request_logs

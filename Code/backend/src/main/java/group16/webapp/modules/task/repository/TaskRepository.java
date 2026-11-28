@@ -20,6 +20,10 @@ public interface TaskRepository extends JpaRepository<TaskEntity, Long>, JpaSpec
 
     List<TaskEntity> findByIdInAndDeletedAtIsNull(Collection<Long> ids);
 
+    /** Ids of a group's non-deleted tasks. */
+    @Query("SELECT t.id FROM TaskEntity t WHERE t.groupId = :groupId AND t.deletedAt IS NULL")
+    List<Long> findActiveIdsByGroupId(@Param("groupId") Long groupId);
+
     @Query("""
             SELECT t FROM TaskEntity t
             WHERE t.deletedAt IS NULL

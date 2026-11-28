@@ -115,6 +115,7 @@ class ScheduleServiceConcurrencyPgTests extends PostgresContainerTest {
                             .toList();
                 }
                 public Optional<Long> findActiveGroupTaskGroupId(Long taskId) { return Optional.empty(); }
+                public List<Long> groupTaskIds(Long groupId) { return List.of(); }
             };
         }
     }
