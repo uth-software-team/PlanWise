@@ -3,7 +3,7 @@
 General rules (approval workflow, git, security, source of truth) are in the root `CLAUDE.md`. This file adds frontend rules.
 
 ## Status
-**Scaffolded (FE-00) + router/layout/auth guard (FE-01) + API client, 401 handling and OpenAPI types (FE-02).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router.
+**Scaffolded (FE-00) + router/layout/auth guard (FE-01) + API client, 401 handling and OpenAPI types (FE-02) + login/register/profile (FE-AU).** Vite + React + strict TypeScript + Tailwind CSS v4 + shadcn/ui + ESLint + Prettier + React Router.
 Base UI on the approved API contract, not guesses.
 
 ## Runtime
@@ -33,27 +33,29 @@ Don't add other UI/state libraries without approval.
 - Format: `npm run format` / `npm run format:check` (Prettier)
 - Add shadcn component: `npx shadcn@4.23.0 add <name>`
 - API types: `npm run gen:api` regenerates `src/api/schema.d.ts` from `docs/api/openapi-v1.json` (generated, committed, ignored by ESLint/Prettier; never edit by hand). Response schemas in the snapshot have no `required`, so response fields are optional in these types.
-- API client checks: `npm run check:api-client` (T1–T9, fake fetch, no backend); `npm run check:api-client -- --base http://localhost:5173/api/v1` with `PLANWISE_CHECK_TOKEN` + `PLANWISE_CHECK_EMAIL` runs I2–I3 against a running backend.
+- API client checks: `npm run check:api-client` (T1–T13, fake fetch, no backend; T10 field errors, T11 safe redirect, T12 logout, T13 current-user store); `npm run check:api-client -- --base http://localhost:5173/api/v1` with `PLANWISE_CHECK_TOKEN` + `PLANWISE_CHECK_EMAIL` runs I2–I3 against a running backend.
 
 ## API client (FE-02)
-- `src/lib/apiClient.ts`: `apiRequest<T>(path, init)` with base `VITE_API_BASE_URL` (default `/api/v1`); unwraps `ApiResponse.data`, throws `ApiError{status, code, conflicts}`.
+- `src/lib/apiClient.ts`: `apiRequest<T>(path, init)` with base `VITE_API_BASE_URL` (default `/api/v1`); unwraps `ApiResponse.data`, throws `ApiError{status, code, conflicts, fieldErrors}`. `fieldErrors` is read only for 400 when `data` is a flat `{field: message}` map (INVALID_INPUT, INVALID_TIME_RANGE); otherwise `{}`.
 - Dev proxy (`vite.config.ts`): `/api` → `http://localhost:8080`, path kept (`/api/v1/...`), so the default base works with `npm run dev`.
 - A 401 for the token the request sent clears the session (`clearToken()`), checked before the body is read; the guards then go to `/login?redirect=<path>`. A late 401 for a replaced token is ignored; 403 keeps the session.
 
 ## Routes & auth guard (FE-01)
 - Router: `src/app/router.tsx` (`createBrowserRouter`). Menu config: `src/app/nav.ts`. Layouts: `src/app/layouts/`. Guards and generic pages: `src/routes/`.
-- Public only (signed-in users go to `/tasks`): `/login`, `/register` (placeholders until FE-AU).
+- Public only: `/login`, `/register` (`features/auth`). `PublicOnlyRoute` is the only place that decides where a signed-in user goes: `resolveRedirect(?redirect=)` from `src/lib/safe-redirect.ts` (single leading `/`, same origin after URL normalisation, not `/login`/`/register`; else `/tasks`), with `replace`. Forms only call `setToken`; never navigate to `?redirect=` anywhere else (SA-13).
+- Register: POST /auth/register returns the user without a token (201), so the page logs in right after; if that fails, it goes to `/login` with the same query and state `{ registered, email }`. Password: ≥ 8 characters and ≤ 72 bytes UTF-8 (backend limits).
 - Protected (no token → `/login?redirect=<path>`): `/` → `/tasks` (default), `/overview`, `/tasks`, `/schedule`, `/groups`, `/ai`, `/notifications`, `/settings`.
 - `/overview` and `/notifications` are P1 placeholders: their routes exist but they are hidden from MVP navigation (`inNav: false` in `nav.ts`), and the header has no notification bell. Routes come from `APP_PAGES`; the sidebar uses `MAIN_NAV`/`SECONDARY_NAV` (only `inNav: true`). Never build routes from the nav lists.
 - `*` → 404 page.
-- Token (CG-04): `src/lib/auth-token.ts`, key `planwise.accessToken` in `localStorage`. Always change it via `setToken`/`clearToken`; guards use `useHasToken()` and react to changes in this tab and other tabs (`storage` event). Guard checks presence only; an expired or invalid token is cleared by the API client on its first 401 (FE-02). It is the only token store: `apiClient` reads it through `getAuthToken`/`setAuthToken`. The old key `planwise_token` is deleted and never read. Logout = `clearToken()` + go to `/login`.
+- Token (CG-04): `src/lib/auth-token.ts`, key `planwise.accessToken` in `localStorage`. Always change it via `setToken`/`clearToken`; guards use `useHasToken()` and react to changes in this tab and other tabs (`storage` event). Guard checks presence only; an expired or invalid token is cleared by the API client on its first 401 (FE-02). It is the only token store: `apiClient` reads it through `getAuthToken`/`setAuthToken`. The old key `planwise_token` is deleted and never read. Logout = `signOut()` from `features/auth/session.ts` (menu and Settings): `clearToken()` first (works offline), then a best-effort `POST /auth/logout` with the old token sent explicitly; `ProtectedRoute` then goes to `/login?redirect=<current page>`.
+- Current user: `useCurrentUser()` (`features/auth/session.ts`) is bound to the stored token; a token change re-fetches `/users/me`, and GET/PUT results for an older token are dropped. After `PUT /users/me`, call `setCurrentUser(user, tokenSentWithPut)` so the user menu updates.
 - Feature tasks replace a placeholder by pointing its route at `features/<module>` pages; keep paths stable.
 
 ## Design & accessibility
 - Team design (`PlanWise Document/PlanWise AI Web Design/`) is the source of truth. Theme tokens (indigo) live in `src/index.css`; use semantic classes (`bg-primary`, `text-muted-foreground`, …), not raw colors, inside the app shell.
 - Contrast: text ≥ 4.5:1, focus ring and UI boundaries ≥ 3:1. Focus rings are solid `ring-ring` (not `/50`).
 - Keyboard: skip link to `#main-content`, visible `focus-visible` rings, touch targets ≥ 44px on nav and header buttons.
-- Local edits to shadcn files (re-apply if a component is re-added with the CLI): `button.tsx` focus ring `ring-ring` instead of `ring-ring/50`; `dropdown-menu.tsx` `DropdownMenuItem` adds `focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring` (inset keyboard focus ring).
+- Local edits to shadcn files (re-apply if a component is re-added with the CLI): `button.tsx` focus ring `ring-ring` instead of `ring-ring/50`; `input.tsx` focus ring `ring-ring` and border `border-muted-foreground/70` instead of `border-input` (boundary ≥ 3:1 on white); `dropdown-menu.tsx` `DropdownMenuItem` adds `focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-ring` (inset keyboard focus ring).
 - `ui-ux-pro-max` skill: guidance only; see `.claude/skills/ui-ux-pro-max/UPSTREAM.md` for usage rules.
 
 ## Structure & Conventions

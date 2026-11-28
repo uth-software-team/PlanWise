@@ -116,31 +116,77 @@ fi
 # ------------------------------------------------------------------------------
 echo -e "\n${BLUE}${BOLD}==> [2/5] Thiết lập file cấu hình môi trường (.env)...${NC}"
 
+# JWT_SECRET ngẫu nhiên dạng hex: 64 ký tự [0-9a-f] = 64 byte (backend cần ≥ 32 byte, dùng nguyên chuỗi UTF-8).
+# Hex không có '/', '+', '&' nên ghi vào file không vỡ như Base64 với sed (R50-3). In chuỗi rỗng nếu không sinh được.
+generate_jwt_secret() {
+  local secret=""
+  if command -v openssl >/dev/null 2>&1; then
+    secret="$(openssl rand -hex 32 2>/dev/null || true)"
+  fi
+  if [[ ! "${secret}" =~ ^[0-9a-f]{64}$ ]] && [ -r /dev/urandom ] && command -v od >/dev/null 2>&1; then
+    secret="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  fi
+  if [[ "${secret}" =~ ^[0-9a-f]{64}$ ]]; then
+    printf '%s' "${secret}"
+  fi
+}
+
+# Đúng khi JWT_SECRET trong file trống, thiếu, hoặc còn là placeholder `change-me...` của .env.example
+# (cùng quy tắc backend từ chối: SecurityConfig.validateJwtSecret).
+jwt_secret_is_placeholder() {
+  local value
+  value="$(grep -E '^JWT_SECRET=' "$1" | head -n 1 | cut -d= -f2- | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+  [ -z "${value}" ] || [[ "${value}" == change-me* ]]
+}
+
+# Thay dòng `JWT_SECRET=...` (hoặc thêm nếu thiếu), giữ nguyên các dòng khác và quyền của file. Không in secret.
+write_jwt_secret() {
+  local env_file="$1" secret="$2" tmp
+  tmp="$(mktemp "${env_file}.XXXXXX")" || return 1
+  # File tạm chứa secret: luôn xóa, kể cả khi lỗi.
+  if ! awk -v secret="${secret}" '
+    /^JWT_SECRET=/ { if (!done) { print "JWT_SECRET=" secret; done = 1 }; next }
+    { print }
+    END { if (!done) print "JWT_SECRET=" secret }
+  ' "${env_file}" > "${tmp}" || ! cat "${tmp}" > "${env_file}"; then
+    rm -f "${tmp}"
+    return 1
+  fi
+  rm -f "${tmp}"
+}
+
+# Chỉ ghi khi JWT_SECRET còn placeholder/trống, nên chạy lại script không đè secret dev đã đặt.
+JWT_SECRET_MISSING=false
+ensure_jwt_secret() {
+  local env_file="$1" secret
+  if ! jwt_secret_is_placeholder "${env_file}"; then
+    echo -e "  [✔] JWT_SECRET đã được đặt (giữ nguyên)."
+    return 0
+  fi
+  secret="$(generate_jwt_secret)"
+  if [ -n "${secret}" ] && write_jwt_secret "${env_file}" "${secret}"; then
+    echo -e "  [✔] Đã sinh ${GREEN}JWT_SECRET${NC} ngẫu nhiên (64 ký tự hex) trong Code/backend/.env."
+  else
+    JWT_SECRET_MISSING=true
+    echo -e "  ${RED}[✘] Không sinh hoặc ghi được JWT_SECRET (cần openssl, hoặc /dev/urandom + od).${NC}"
+    echo -e "      Backend sẽ từ chối khởi động. Đặt thủ công trong Code/backend/.env một chuỗi ngẫu nhiên ≥ 32 byte,"
+    echo -e "      ví dụ trên máy khác: ${CYAN}openssl rand -hex 32${NC}"
+  fi
+}
+
 if [ -d "${BACKEND_DIR}" ]; then
   BACKEND_ENV="${BACKEND_DIR}/.env"
   BACKEND_EXAMPLE="${BACKEND_DIR}/.env.example"
 
   if [ -f "${BACKEND_ENV}" ]; then
     echo -e "  [✔] File ${GREEN}Code/backend/.env${NC} đã tồn tại (giữ nguyên cấu hình hiện tại)."
+    ensure_jwt_secret "${BACKEND_ENV}"
+  elif [ -f "${BACKEND_EXAMPLE}" ]; then
+    cp "${BACKEND_EXAMPLE}" "${BACKEND_ENV}"
+    echo -e "  [✔] Đã tạo ${GREEN}Code/backend/.env${NC} từ .env.example."
+    ensure_jwt_secret "${BACKEND_ENV}"
   else
-    if [ -f "${BACKEND_EXAMPLE}" ]; then
-      cp "${BACKEND_EXAMPLE}" "${BACKEND_ENV}"
-      # Tự động tạo ngẫu nhiên JWT_SECRET 32+ bytes nếu máy có openssl
-      if command -v openssl >/dev/null 2>&1; then
-        RAND_SECRET=$(openssl rand -base64 32 | tr -d '\n')
-        # Thay thế JWT_SECRET mặc định trong file vừa tạo
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-          sed -i '' "s/JWT_SECRET=.*/JWT_SECRET=${RAND_SECRET}/" "${BACKEND_ENV}"
-        else
-          sed -i "s/JWT_SECRET=.*/JWT_SECRET=${RAND_SECRET}/" "${BACKEND_ENV}"
-        fi
-        echo -e "  [✔] Đã tạo ${GREEN}Code/backend/.env${NC} từ .env.example (kèm auto-generated JWT Secret)."
-      else
-        echo -e "  [✔] Đã tạo ${GREEN}Code/backend/.env${NC} từ .env.example."
-      fi
-    else
-      echo -e "  ${YELLOW}[!] Không tìm thấy Code/backend/.env.example, bỏ qua.${NC}"
-    fi
+    echo -e "  ${YELLOW}[!] Không tìm thấy Code/backend/.env.example, bỏ qua.${NC}"
   fi
 fi
 
@@ -244,6 +290,12 @@ fi
 # ------------------------------------------------------------------------------
 # Hoàn tất & Hướng dẫn tiếp theo
 # ------------------------------------------------------------------------------
+if [ "${JWT_SECRET_MISSING}" = true ]; then
+  echo -e "\n${RED}${BOLD}[✘] Thiết lập CHƯA xong: Code/backend/.env chưa có JWT_SECRET hợp lệ (xem bước 2/5).${NC}"
+  echo -e "    Đặt JWT_SECRET (≥ 32 byte, ví dụ ${CYAN}openssl rand -hex 32${NC}) rồi chạy lại script."
+  exit 1
+fi
+
 echo -e "\n${GREEN}${BOLD}============================================================${NC}"
 echo -e "${GREEN}${BOLD}         🎉 THIẾT LẬP MÔI TRƯỜNG DEV HOÀN TẤT! 🎉          ${NC}"
 echo -e "${GREEN}${BOLD}============================================================${NC}"

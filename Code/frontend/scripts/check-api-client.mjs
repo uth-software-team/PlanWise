@@ -2,7 +2,9 @@
 // The real modules are loaded through Vite SSR (so `@/` and import.meta.env work); storage is faked.
 //
 //   npm run check:api-client
-//     T1–T9 with a fake fetch and fake tokens. No backend or network needed.
+//     T1–T13 with a fake fetch and fake tokens. No backend or network needed.
+//     T10 field errors (ApiError.fieldErrors), T11 safe ?redirect= (SA-13), T12 shared logout,
+//     T13 current-user store bound to the token (FE-AU).
 //   npm run check:api-client -- --base http://localhost:5173/api/v1
 //     I2–I3 against a running backend through that base URL. Reads PLANWISE_CHECK_TOKEN (a valid
 //     token) and PLANWISE_CHECK_EMAIL from the environment; the token is never printed.
@@ -55,7 +57,9 @@ async function load(server) {
   server.moduleGraph.invalidateAll()
   const api = await server.ssrLoadModule('/src/lib/apiClient.ts')
   const auth = await server.ssrLoadModule('/src/lib/auth-token.ts')
-  return { api, auth }
+  const session = await server.ssrLoadModule('/src/features/auth/session.ts')
+  const redirect = await server.ssrLoadModule('/src/lib/safe-redirect.ts')
+  return { api, auth, session, redirect }
 }
 
 // ---------- fake fetch ----------
@@ -68,8 +72,9 @@ function useFakeFetch(handler) {
   calls = []
   respond = handler
   globalThis.fetch = async (url, init = {}) => {
-    calls.push({ url: String(url), auth: new Headers(init.headers).get('Authorization') })
-    return respond()
+    const auth = new Headers(init.headers).get('Authorization')
+    calls.push({ url: String(url), auth })
+    return respond({ url: String(url), auth })
   }
 }
 
@@ -108,6 +113,19 @@ async function expectApiError(promise, status, code) {
   }
   throw new Error(`expected ApiError ${status} ${code}, but the request succeeded`)
 }
+
+/** Awaits a rejected request and returns the error (fails if it resolved). */
+async function caught(promise) {
+  try {
+    await promise
+  } catch (err) {
+    return err
+  }
+  throw new Error('expected the request to fail, but it succeeded')
+}
+
+/** Lets pending promise callbacks (fetch handlers, .then) run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 function reset(entries = {}) {
   store.clear()
@@ -214,6 +232,223 @@ async function unitChecks() {
       await api.apiRequest('/users/me')
       expectEqual(calls[0].url, '/api/v1/users/me', 'URL')
     })
+
+    await check(
+      'T10a',
+      '400 INVALID_INPUT (one planning bound missing) gives fieldErrors',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { api } = await load(server)
+        useFakeFetch(() =>
+          json(400, {
+            success: false,
+            code: 'INVALID_INPUT',
+            message: 'Invalid input',
+            data: { planningEnd: 'planningStart and planningEnd must be sent together' },
+          }),
+        )
+        const err = await caught(api.apiRequest('/users/me', { method: 'PUT', body: '{}' }))
+        expectEqual(err.code, 'INVALID_INPUT', 'code')
+        expectEqual(
+          err.fieldErrors.planningEnd,
+          'planningStart and planningEnd must be sent together',
+          'fieldErrors.planningEnd',
+        )
+        expectEqual(err.conflicts.length, 0, 'conflicts')
+      },
+    )
+
+    await check(
+      'T10b',
+      '400 INVALID_TIME_RANGE (start >= end) gives fieldErrors.planningEnd',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { api } = await load(server)
+        useFakeFetch(() =>
+          json(400, {
+            success: false,
+            code: 'INVALID_TIME_RANGE',
+            message: 'planningStart must be before planningEnd',
+            data: { planningEnd: 'must be after planningStart' },
+          }),
+        )
+        const err = await caught(api.apiRequest('/users/me', { method: 'PUT', body: '{}' }))
+        expectEqual(err.code, 'INVALID_TIME_RANGE', 'code')
+        expectEqual(
+          err.fieldErrors.planningEnd,
+          'must be after planningStart',
+          'fieldErrors.planningEnd',
+        )
+        expectEqual(err.message, 'planningStart must be before planningEnd', 'message')
+      },
+    )
+
+    await check(
+      'T10c',
+      '400 with null or empty data: no field errors, general message kept',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { api } = await load(server)
+        for (const data of [null, {}, ['x'], { nested: { a: 'b' } }]) {
+          useFakeFetch(() =>
+            json(400, { success: false, code: 'INVALID_INPUT', message: 'Invalid input', data }),
+          )
+          const err = await caught(api.apiRequest('/users/me', { method: 'PUT', body: '{}' }))
+          expectEqual(
+            Object.keys(err.fieldErrors).length,
+            0,
+            `fieldErrors for ${JSON.stringify(data)}`,
+          )
+          expectEqual(err.message, 'Invalid input', 'message')
+        }
+      },
+    )
+
+    await check('T10d', '409 conflicts are still read; fieldErrors stays empty', async () => {
+      reset({ [KEY]: 'fake-a' })
+      const { api } = await load(server)
+      const conflict = { sessionId: 7, code: 'SESSION_OVERLAP', message: 'overlap' }
+      useFakeFetch(() =>
+        json(409, {
+          success: false,
+          code: 'CONSTRAINT_VIOLATION',
+          message: 'Conflicts',
+          data: { conflicts: [conflict] },
+        }),
+      )
+      const err = await caught(api.apiRequest('/schedules/confirm', { method: 'POST', body: '{}' }))
+      expectEqual(err.conflicts.length, 1, 'conflicts')
+      expectEqual(err.conflicts[0].code, 'SESSION_OVERLAP', 'conflicts[0].code')
+      expectEqual(Object.keys(err.fieldErrors).length, 0, 'fieldErrors')
+    })
+
+    await check(
+      'T11',
+      'resolveRedirect keeps safe in-app paths, everything else goes to /tasks',
+      async () => {
+        reset()
+        const { redirect } = await load(server)
+        const origin = 'http://localhost:5173'
+        const cases = [
+          ['/settings', '/settings'],
+          ['/settings?tab=profile#top', '/settings?tab=profile#top'],
+          ['/schedule?from=2026-12-01', '/schedule?from=2026-12-01'],
+          [null, '/tasks'],
+          [undefined, '/tasks'],
+          ['', '/tasks'],
+          ['tasks', '/tasks'],
+          ['//evil.com', '/tasks'],
+          ['//evil.com/path', '/tasks'],
+          ['/\\evil.com', '/tasks'],
+          ['/\t/evil.com', '/tasks'],
+          ['/\n/evil.com', '/tasks'],
+          ['https://evil.com', '/tasks'],
+          ['javascript:alert(1)', '/tasks'],
+          ['/login', '/tasks'],
+          ['/register?redirect=/x', '/tasks'],
+        ]
+        for (const [input, expected] of cases) {
+          expectEqual(
+            redirect.resolveRedirect(input, origin),
+            expected,
+            `resolveRedirect(${JSON.stringify(input)})`,
+          )
+        }
+      },
+    )
+
+    await check('T12a', 'signOut ends the local session even when the network fails', async () => {
+      reset({ [KEY]: 'fake-a' })
+      const { session } = await load(server)
+      useFakeFetch(() => Promise.reject(new TypeError('Failed to fetch')))
+      session.signOut()
+      expectEqual(store.has(KEY), false, 'token present right after signOut')
+      await settle()
+      expectEqual(calls[0]?.url, '/api/v1/auth/logout', 'logout URL')
+      expectEqual(calls[0]?.auth, 'Bearer fake-a', 'logout sends the old token')
+      expectEqual(store.has(KEY), false, 'token present after the failed call')
+    })
+
+    await check('T12b', 'a late 401 for the logout request keeps a newer session', async () => {
+      reset({ [KEY]: 'fake-a' })
+      const { session, auth } = await load(server)
+      let release
+      const gate = new Promise((resolve) => (release = resolve))
+      useFakeFetch(() =>
+        gate.then(() => json(401, { success: false, code: 'UNAUTHENTICATED', message: 'expired' })),
+      )
+      session.signOut()
+      auth.setToken('fake-b')
+      release()
+      await settle()
+      expectEqual(store.get(KEY), 'fake-b', 'current token')
+    })
+
+    await check(
+      'T13a',
+      'current user: a late GET for token A is dropped after switching to B',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { session, auth } = await load(server)
+        let release
+        const gate = new Promise((resolve) => (release = resolve))
+        useFakeFetch(({ auth: header }) =>
+          header === 'Bearer fake-a'
+            ? gate.then(() =>
+                json(200, { success: true, data: { id: 1, email: 'a@example.test' } }),
+              )
+            : json(200, { success: true, data: { id: 2, email: 'b@example.test' } }),
+        )
+        const unsubscribe = session.subscribeCurrentUser(() => {})
+        try {
+          expectEqual(session.getCurrentUserSnapshot().status, 'loading', 'status while A loads')
+          auth.setToken('fake-b') // e.g. a login in another tab
+          await settle()
+          release()
+          await settle()
+          const state = session.getCurrentUserSnapshot()
+          expectEqual(state.status, 'ready', 'status')
+          expectEqual(state.user?.email, 'b@example.test', 'user after the late A response')
+        } finally {
+          unsubscribe()
+        }
+      },
+    )
+
+    await check(
+      'T13b',
+      'current user: a saved profile updates the store only for its own token',
+      async () => {
+        reset({ [KEY]: 'fake-b' })
+        const { session } = await load(server)
+        useFakeFetch(() =>
+          json(200, { success: true, data: { id: 2, email: 'b@example.test', fullName: 'Old' } }),
+        )
+        const unsubscribe = session.subscribeCurrentUser(() => {})
+        try {
+          await settle()
+          expectEqual(session.getCurrentUserSnapshot().user?.fullName, 'Old', 'loaded name')
+          const late = session.setCurrentUser(
+            { id: 1, email: 'a@example.test', fullName: 'A' },
+            'fake-a',
+          )
+          expectEqual(late, false, 'PUT result for an ended session accepted')
+          expectEqual(
+            session.getCurrentUserSnapshot().user?.fullName,
+            'Old',
+            'name after the late PUT',
+          )
+          const saved = session.setCurrentUser(
+            { id: 2, email: 'b@example.test', fullName: 'New' },
+            'fake-b',
+          )
+          expectEqual(saved, true, 'PUT result for the current session accepted')
+          expectEqual(session.getCurrentUserSnapshot().user?.fullName, 'New', 'name after the PUT')
+        } finally {
+          unsubscribe()
+        }
+      },
+    )
   } finally {
     await server.close()
   }

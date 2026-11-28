@@ -35,3 +35,49 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Environment Variables ###
+.env
+.env.*
+!.env.example
+!.env.template
+
+### Local Application Configuration ###
+application-local.properties
+application-local.yml
+application-local.yaml
+
+### Secrets & Credentials ###
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+
+### Logs ###
+logs/
+*.log
+
+### Operating System ###
+.DS_Store
+.AppleDouble
+Thumbs.db
+Desktop.ini
+
+### Temporary Files ###
+*.tmp
+*.swp
+*.bak
+*.swo
+
+### Docker ###
+docker-compose.override.yml
+docker-compose.override.yaml
+compose.override.yml
+compose.override.yaml
+
+### Test & Coverage ###
+coverage/
+.jacoco/
