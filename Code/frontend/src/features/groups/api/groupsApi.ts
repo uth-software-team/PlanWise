@@ -33,6 +33,42 @@ export function addMember(groupId: number, email: string): Promise<GroupMember> 
   })
 }
 
+/**
+ * DELETE /groups/{id}/members/{userId} (204): the LEADER removes a MEMBER (FE-GR-01b). 403 not LEADER, 404 not an
+ * ACTIVE member, 409 DATA_CONFLICT for the LEADER.
+ */
+export function deleteMember(groupId: number, userId: number): Promise<void> {
+  return apiRequest<void>(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' })
+}
+
+/**
+ * DELETE /groups/{id}/members/{me}[?expectedSuccessorUserId=] (204): leave the group (D16). A MEMBER sends no
+ * successor; the LEADER must send the group's `successorUserId`. 409 STALE_VERSION when the role or successor no
+ * longer matches (nothing changed), 409 DATA_CONFLICT when the LEADER has no successor.
+ */
+export function leaveGroup(
+  groupId: number,
+  myUserId: number,
+  expectedSuccessorUserId?: number,
+): Promise<void> {
+  const query =
+    expectedSuccessorUserId === undefined
+      ? ''
+      : `?expectedSuccessorUserId=${expectedSuccessorUserId}`
+  return apiRequest<void>(`/groups/${groupId}/members/${myUserId}${query}`, { method: 'DELETE' })
+}
+
+/**
+ * POST /groups/{id}/transfer-leadership (200, the updated group): the caller becomes MEMBER. 403 not LEADER,
+ * 404 target not an ACTIVE member or account inactive, 409 target is the caller.
+ */
+export function transferLeadership(groupId: number, newLeaderUserId: number): Promise<GroupDetail> {
+  return apiRequest<GroupDetail>(`/groups/${groupId}/transfer-leadership`, {
+    method: 'POST',
+    body: JSON.stringify({ newLeaderUserId }),
+  })
+}
+
 /** True when `userId` is the group's ACTIVE LEADER according to `members` (D16: at most one). */
 export function isLeaderOf(group: GroupDetail | null, userId: number | undefined): boolean {
   if (!group || userId === undefined) return false
