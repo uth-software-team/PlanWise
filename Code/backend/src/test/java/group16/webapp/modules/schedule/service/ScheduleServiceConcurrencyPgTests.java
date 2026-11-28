@@ -39,16 +39,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -178,14 +175,31 @@ class ScheduleServiceConcurrencyPgTests extends PostgresContainerTest {
         }
     }
 
-    private static void await(CyclicBarrier barrier) {
-        try {
-            barrier.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+    /**
+     * Polls PostgreSQL until a backend of this database waits on a row lock (the second generate blocked by the
+     * first one's uncommitted UPDATE). JUnit runs the pg test classes one at a time, so that is the only waiter.
+     */
+    private void awaitLockWaiter() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(TIMEOUT_SECONDS);
+        while (System.nanoTime() < deadline) {
+            Integer waiting = jdbc.queryForObject("SELECT count(*) FROM pg_stat_activity"
+                    + " WHERE datname = current_database() AND wait_event_type = 'Lock'", Integer.class);
+            if (waiting != null && waiting > 0) {
+                return;
             }
-            throw new IllegalStateException("barrier not reached", e);
+            Thread.sleep(20);
+        }
+        fail("the second generate never waited on the first one's row lock");
+    }
+
+    private static void awaitRelease(CountDownLatch release) {
+        try {
+            if (!release.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("release signal not received");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
         }
     }
 
@@ -255,46 +269,51 @@ class ScheduleServiceConcurrencyPgTests extends PostgresContainerTest {
     }
 
     /**
-     * Two generates have both read the same PROPOSED batch (same version) before either writes. Each transaction
-     * loads that batch first, waits at the barrier, then calls generate in the same transaction, whose own lookup
-     * returns the already-loaded instance. Both therefore cancel the batch against the same {@code @Version}: one
-     * wins, the other waits for its row lock and then gets 409 STALE_VERSION, whatever the thread timing.
-     * (With no batch yet, the partial unique index decides; see ScheduleMigrationPgTests.)
+     * Two generates race to cancel the same PROPOSED batch. Generate 1 runs in an open transaction: it has cancelled
+     * the old batch (row lock held) and inserted its own, but has not committed. Generate 2 therefore still reads the
+     * old batch with the same {@code @Version} and its UPDATE blocks on that row lock; the test waits until PostgreSQL
+     * reports the lock wait, then lets generate 1 commit. Generate 2's UPDATE then matches 0 rows: 409 STALE_VERSION.
+     * The order is fixed by the lock wait, not by thread timing. (With no batch yet, the partial unique index
+     * decides; see ScheduleMigrationPgTests.)
      */
     @Test
     void concurrentRegenerateLeavesExactlyOneProposedBatch() throws Exception {
         ProposalBatchResponse existing = generate();
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
 
-        CyclicBarrier bothRead = new CyclicBarrier(2);
+        CountDownLatch firstHoldsLock = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
         ExecutorService executor = Executors.newFixedThreadPool(2);
+        Long newBatchId;
         try {
-            Callable<String> regenerate = () -> outcome(() -> tx.executeWithoutResult(status -> {
-                ScheduleProposal old = proposalRepository.findByUserIdAndStatus(userId, ProposalStatus.PROPOSED)
-                        .orElseThrow();
-                if (!old.getId().equals(existing.proposalId())) {
-                    throw new IllegalStateException("read batch " + old.getId() + ", expected " + existing.proposalId());
-                }
-                await(bothRead);
-                generate();
+            Future<Long> first = executor.submit(() -> tx.execute(status -> {
+                // Joins this transaction, so the old batch's row lock is held until releaseFirst.
+                Long id = generate().proposalId();
+                firstHoldsLock.countDown();
+                awaitRelease(releaseFirst);
+                return id;
             }));
-            Future<String> a = executor.submit(regenerate);
-            Future<String> b = executor.submit(regenerate);
-            List<String> outcomes = new ArrayList<>(Arrays.asList(
-                    a.get(TIMEOUT_SECONDS, TimeUnit.SECONDS), b.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)));
+            assertTrue(firstHoldsLock.await(TIMEOUT_SECONDS, TimeUnit.SECONDS), "first generate did not finish its work");
 
-            assertTrue(outcomes.remove("OK"), "one generate must succeed: " + outcomes);
-            assertEquals(List.of(ErrorCode.STALE_VERSION.name()), outcomes,
-                    "the other must be rejected with 409 STALE_VERSION: " + outcomes);
+            Future<String> second = executor.submit(() -> outcome(this::generate));
+            awaitLockWaiter();
+            assertFalse(second.isDone(), "second generate must wait while the first transaction is open");
+
+            releaseFirst.countDown();
+            newBatchId = first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            assertEquals(ErrorCode.STALE_VERSION.name(), second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                    "the second generate must be rejected with 409 STALE_VERSION");
         } finally {
+            releaseFirst.countDown();
             executor.shutdownNow();
             assertTrue(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         }
 
-        long proposed = proposalRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+        List<Long> proposed = proposalRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
                 .filter(p -> p.getStatus() == ProposalStatus.PROPOSED)
-                .count();
-        assertEquals(1, proposed, "exactly one PROPOSED batch must remain");
+                .map(ScheduleProposal::getId)
+                .toList();
+        assertEquals(List.of(newBatchId), proposed, "exactly one PROPOSED batch (the first generate's) must remain");
         assertEquals(ProposalStatus.CANCELLED,
                 proposalRepository.findById(existing.proposalId()).orElseThrow().getStatus());
         assertTrue(sessionRepository.findByProposalIdOrderByStartAtAsc(existing.proposalId()).stream()
