@@ -9,7 +9,7 @@ Persistent audit state. Follow CHECKLIST.md. Update after each completed module.
 - Scope: backend `Code/backend/src/main`, frontend `Code/frontend/src`, CI, compose, env examples. Implemented on this branch: auth/profile, group (GR-01..04), schedule. Stubs (NOT_IMPLEMENTED): task, availability/fixed events/calendar, assignment, AI, notification (NoOp)
 - Branch: audit on `feature/common-contract-max-query-range` (8e7db4b); fixes on `fix/auth-jwt-hardening` from origin/develop 5d03acb (PR #48 merged; audited files identical)
 - Baseline commit: 8e7db4b
-- Last audited commit: 8f38236 (frontend checklist 3); SA-10/SA-11 fix 2887f76 on `fix/frontend-index-and-token-bar` (from origin/develop 5d03acb)
+- Last audited commit: 65b2d63 (checklist 7); 8f38236 (frontend checklist 3); SA-10/SA-11 fix 2887f76 on `fix/frontend-index-and-token-bar` (from origin/develop 5d03acb)
 - Working tree: only this file, uncommitted (TV1 commits, D13)
 - Phase: COMPLETE for SA-02/SA-04/SA-10/SA-11; other items pending
 - Updated: 2026-11-28
@@ -42,7 +42,13 @@ Persistent audit state. Follow CHECKLIST.md. Update after each completed module.
 | 6 CI/CD permissions | REVIEWED | gitflow-check.yml: `pull_request` only, `contents: read`, no secrets |
 | 6 Docker / ports | REVIEWED | Dockerfile empty (0 bytes); compose binds 127.0.0.1 only |
 | 6 Prod misconfig | PARTIAL | Swagger public, no prod profile → SA-08 |
-| 7 Performance | PARTIAL | N+1 user lookups → SA-09 |
+| 7 Memory/resource leaks | REVIEWED | FE: both `storage` listeners removed on cleanup (SchedulePage.tsx:62-69, auth-token.ts:65-79); no timers. BE: no caches/static collections growing per request |
+| 7 N+1 queries | REVIEWED | SA-09 (deferred); task titles batched (ScheduleService.java:444-449); per-member calendar fan-out → SA-16 |
+| 7 Inefficient operations | REVIEWED | Unbounded history load → SA-15. Acceptable at MVP scale: SlotCalculator.subtractBusy O(A×B) (SlotCalculator.java:23-38), isContainedWithin re-merges per session (ConstraintValidator.java:61 → SlotCalculator.java:65-72), engine O(T×P); inputs capped by D14 (366 days) |
+| 7 Pagination / cache invalidation | REVIEWED | `/tasks` page size ≤100 (stub); group lists/members unpaginated but bounded by membership; no caching → N/A |
+| 7 Timeout / retry / failure | REVIEWED | No DB/transaction timeouts → SA-18; FE fetch timeout SA-12 (deferred) |
+| 7 Concurrent requests | PARTIAL | Tested: concurrent confirm (ScheduleServiceIntegrationTests.java:507), leader leave (GroupMembershipConcurrencyPgTests.java:81). Untested → SA-17 |
+| 7 Resource exhaustion | REVIEWED | Query windows capped (D14); SA-03 (deferred); group fan-out → SA-16; history growth → SA-19 |
 | 8 Architecture & quality | PENDING | Not reviewed |
 | Stub modules (task, availability, assignment, AI) | BLOCKED | Implementations in open PRs #35/#36/#39; re-audit after merge |
 
@@ -76,6 +82,11 @@ Status: PENDING / REVIEWED / PARTIAL / BLOCKED / N/A.
 | SA-12 | LOW | DEFERRED | Code/frontend/src/lib/apiClient.ts:109-112 | `fetch` without timeout/abort signal | No `AbortSignal` anywhere in src | Hung backend keeps `isBusy` true → all schedule actions disabled until reload | Default `AbortSignal.timeout(15000)` when caller passes no `signal`; map abort to `ApiError` (needs check:api-client test) |
 | SA-13 | INFO | POTENTIAL | Code/frontend/src/routes/ProtectedRoute.tsx:11-12 | `?redirect=` built now; consumer (FE-AU login) not written yet | Login page is a placeholder | Open redirect (CWE-601) if FE-AU navigates to it unchecked | FE-AU: accept only paths starting with `/` and not `//` or `/\`; else go to `/tasks` |
 | SA-14 | INFO | CONFIRMED | Code/frontend/src/app/layouts/UserMenu.tsx:19-21 | Logout clears the token but not `planwise.schedule.activeProposalId` (sessionStorage) | Next account in the same tab re-reads it → 404 → cleared (scheduleApi.ts:251-254) | None (server ownership check); cosmetic | None |
+| SA-15 | LOW | CONFIRMED | Code/backend/src/main/java/group16/webapp/modules/schedule/service/ScheduleService.java:429-442 | `computeRemainingMinutes` loads every CONFIRMED/COMPLETED session the user ever had (`findByUserIdAndStatusIn`), not only those of the tasks being planned | Called by generate (:118) and checkHardConstraints (:408, edit + confirm) | Work and memory per request grow with account history; confirm does it while holding the proposal row lock | Query only the target task ids (`findByUserIdAndTaskIdInAndStatusIn`, index `idx_schedule_sessions_task` exists) or an aggregate SUM per task; no schema change |
+| SA-16 | LOW | DEFERRED | Code/backend/src/main/java/group16/webapp/modules/group/service/impl/GroupAvailabilityServiceImpl.java:55-58 | One `busyIntervals` expansion per ACTIVE member over up to 366 days; no member cap on a group (GroupServiceImpl.java:93-110) | CalendarApi has no implementation on this branch (501 NOT_IMPLEMENTED) | Any member of a large group can trigger members × 366-day expansions per request | Re-check after #39 lands CalendarApi; options: member cap, or a shorter max window for group availability (contract change) |
+| SA-17 | INFO | UNVERIFIED | ScheduleService.java:79-102,200-255,310-347 | Concurrent generate/generate and edit/confirm on one batch have no tests | Expected safe: `@Version` on ScheduleProposal (ScheduleProposal.java:38) → 409 STALE_VERSION; partial unique index `uk_schedule_proposals_active_user` (V10) → 409 DATA_CONFLICT. H2 tests cannot exercise the partial index | A regression could leave 2 PROPOSED batches or move a confirmed session unnoticed | Add pgTest cases (two threads, CountDownLatch) for both races |
+| SA-18 | INFO | CONFIRMED | Code/backend/src/main/resources/application.properties | No transaction/statement timeout; Hikari defaults (pool 10, connectionTimeout 30 s) | No `spring.transaction.default-timeout`, no `statement_timeout` | A slow query or lock wait holds a pooled connection indefinitely | Optional: `spring.transaction.default-timeout` (config change); not needed for MVP |
+| SA-19 | INFO | CONFIRMED | ScheduleService.java:92-102,139-146 | Each generate keeps the old batch and its sessions as CANCELLED rows; no retention | No delete/cleanup path | Table growth only; queries filter by status/user and are indexed | None for MVP |
 
 Severity: CRITICAL / HIGH / MEDIUM / LOW / INFO.
 
@@ -92,6 +103,8 @@ Status: POTENTIAL / CONFIRMED / FALSE_POSITIVE / FIXED / VERIFIED / UNVERIFIED /
 | SA-10 | Replace index.html with the FE-00 single document | Low; title/lang change visible | `npm run build`, dist/index.html has 1 root | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-11 | Gate token bar with `import.meta.env.DEV` | Low; testers on prod build lose the bar (no login UI until FE-AU) | lint/tsc/build; check bundle has no "Bearer Token:" | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-12 | Default fetch timeout in apiRequest | Medium; slow generate calls may abort (pick timeout) | New check:api-client case | Revert commit | REJECTED / DEFERRED (TV1 2026-11-28) |
+| SA-15 | Repository method `findByUserIdAndTaskIdInAndStatusIn`; `computeRemainingMinutes` passes the task ids it computes for | Low; same result, fewer rows | Existing schedule tests (remaining minutes, HC-07) + build/pgTest | Revert commit | APPROVED (TV1 2026-11-28) |
+| SA-17 | 2 pgTest cases: concurrent generate (one PROPOSED remains, other 409), edit vs confirm (one wins, other 409, confirmed session unchanged) | Low (tests only); flakiness risk with threads | `./gradlew pgTest` | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-09 | Batch user lookup | Low | Existing group tests | Revert commit | REJECTED (TV1 2026-11-28: skip) |
 
 Approval: PENDING / APPROVED / REJECTED.
@@ -115,12 +128,12 @@ Result: PASS / FAIL / NOT_RUN / BLOCKED / N/A.
 
 ## Resume
 
-- Completed: DISCOVER, BASELINE (H2 build), AUDIT of auth, group, schedule, secrets, CI, frontend storage; SA-02, SA-04 fixed + verified (committed 4faab9f, 8f38236); checklist 3 frontend reviewed; SA-10, SA-11 fixed + verified (2887f76)
-- Pending: TV1 PRs for `fix/auth-jwt-hardening` and `fix/frontend-index-and-token-bar`; CVE scan (network approval); checklist 7, 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
-- Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 (done); SA-12 deferred (TV1 2026-11-28)
+- Completed: DISCOVER, BASELINE (H2 build), AUDIT of auth, group, schedule, secrets, CI, frontend storage; SA-02, SA-04 fixed + verified (committed 4faab9f, 8f38236); checklist 3 frontend reviewed; checklist 7 reviewed; SA-10, SA-11 fixed + verified (2887f76)
+- Pending: TV1 PRs for `fix/auth-jwt-hardening` and `fix/frontend-index-and-token-bar`; CVE scan (network approval); SA-15/SA-17 implementation on a `fix/` branch from develop; SA-16 re-check after #39; checklist 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
+- Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 (done); SA-12 deferred; SA-15, SA-17 approved; SA-16 deferred until #39 (TV1 2026-11-28)
 - Blockers: None
 - Decisions: SA-05..SA-08 treated as accepted by G7/G8/D11/CG-04/CG-11
 - Remaining risks: SA-01 brute force (accepted); SA-03 unbounded description/includeTaskIds (accepted); SA-09 N+1 (accepted); SA-12 no fetch timeout (accepted); unreviewed stub modules; dependency CVEs unknown
-- Next: TV1 commits this file and opens both PRs; then checklist 7/8 or CVE scan (needs approval)
+- Next: TV1 commits this file; Claude implements SA-15 + SA-17 on `fix/schedule-remaining-minutes` from origin/develop; then checklist 8 or CVE scan (needs approval)
 
 Resume pending work. Revalidate stale evidence when relevant files, configuration, dependencies, or requirements change. Store large sanitized reports separately. Never mark untested checks as PASS.
