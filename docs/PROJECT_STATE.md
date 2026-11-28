@@ -10,7 +10,7 @@ Persistent development state. Keep concise, evidence-based, and up to date.
 - Branch: `develop` = origin/develop 1a91375 (#49 0df1ec9, #50 4b44492, #51 1a91375 merged, all without review: GOV-14/15/16). Working branch: `feature/fe-auth` (FE-AU, not committed)
 - Last reviewed commit: 0df1ec9 (squash tree == #49 head 43f8500); #49/#50/#51 diffs reviewed by Claude (docs/reviews/PR_REVIEW.md)
 - Current milestone: Priorities 2–3 (Tasks, Availability/Fixed Events) are in open PRs #35/#36/#39, not merged. Deadline 2026-12-03 (5 days)
-- Updated: 2026-11-28 (#50/#51 merged → GOV-15/16 recorded; FE-AU implemented on `feature/fe-auth`, not committed)
+- Updated: 2026-11-28 (#50/#51 merged → GOV-15/16 recorded; FE-AU implemented on `feature/fe-auth`, not committed; AI-01 implemented on `feature/ai-client`, not committed)
 
 ## Progress
 
@@ -40,6 +40,8 @@ Persistent development state. Keep concise, evidence-based, and up to date.
 | AV-02 | Availability rule CRUD + interval expansion (PR #36, Khoi12vn) | IN_PROGRESS | CI 4/4 SUCCESS. TV1 review: [HIGH] empty `fixedEventOccurrences` lets scheduling ignore fixed events (merge #39 right after, or throw NOT_IMPLEMENTED); [LOW] per-day loop. CHANGES_REQUESTED 03:42Z; head dbb7d1b unchanged since review; 12 commits behind `develop` | Author fix; merge order with #39 |
 | AV-03 | Fixed events + calendar (PR #39, Khoi12vn) | IN_PROGRESS | CI 4/4 SUCCESS. TV1 review: [MEDIUM] WEEKLY expansion untested (4 cases); [MEDIUM] unbounded calendar range (to use API-01 helper, now on `develop`). CHANGES_REQUESTED 03:41Z; head 6a090b2 unchanged since review; 12 commits behind `develop` | Author fix |
 | IT-01 | E2E checklist for the 6 demo flows (`docs/e2e/demo-flows.md`, TV1) | IMPLEMENTED | Branch `docs/e2e-demo-flows` from 1a91375, not committed (2026-11-28). Per flow: preconditions, UI steps, expected results with error codes and BR refs, negative cases, result columns; shared setup (PostgreSQL, accounts A/B/C, day D), bug log, gate criteria. 24 endpoints and 7 error codes checked against `openapi-v1.json` / `ErrorCode`. Readiness at 1a91375: flow 1 needs #52; tasks, availability rules, fixed events, calendar, assignments and AI still answer 501 on `develop`; no FE branch from TV2–TV4 on origin, so flows 2–6 cannot run through the UI yet | Review; TV1 decision on gate risk |
+
+| AI-01 | `AiClient` + `GeminiAiClient` + `FakeAiClient` (TV1 on behalf of TV4, `feature/ai-client` from origin/develop 45d9f3b) | IMPLEMENTED | Not committed (2026-11-28). REST `v1beta/models/{model}:generateContent`, key in `x-goog-api-key`, `responseMimeType` + `responseJsonSchema` (5 optional draft fields, `minimum: 1`, `additionalProperties: false`), no temperature/topP/topK (TV1 reversed `temperature: 0`); thought parts dropped, exactly one JSON object accepted; blank key → Fake `{}`/0 tokens; `app.ai.timeout=5s` via `JdkClientHttpRequestFactory` (Spring 7.0.10 `TimeoutHandler` closes the body, so no executor). Local `./gradlew --offline --rerun-tasks build pgTest` (2026-11-28): `test` 32 files 427 tests (379 + 48 AI-01), `pgTest` 7 files 169 tests, 0 failures/errors/skipped; T1 0.31 s / T2 0.33 s at 300 ms. `AiController` still 501. Real Gemini call NOT_RUN (TV1, outside session); E6/CG-08 still OPEN in `01_CONTRACT_GATES.md` | TV1 payload check; commit/push (TV1); PR by TV4; review TV3; Codex; ACCEPT |
 
 Status: TODO / IN_PROGRESS / IMPLEMENTED / VERIFIED / BLOCKED / DEFERRED.
 
