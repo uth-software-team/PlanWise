@@ -89,6 +89,7 @@ class ScheduleServiceIntegrationTests {
     static class StandInModules {
 
         @Bean
+        @Primary
         AvailabilityApi availabilityApi() {
             return new AvailabilityApi() {
                 public boolean hasActiveRule(Long userId) { return true; }
