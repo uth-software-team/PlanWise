@@ -92,6 +92,29 @@ class AvailabilityRuleControllerTests extends AuthenticatedMvcTest {
     }
 
     @Test
+    void updateWithoutActiveKeepsTheCurrentValue() throws Exception {
+        String created = callAuthenticated(HttpMethod.POST, "/v1/availability-rules",
+                "{\"dayOfWeek\":4,\"startTime\":\"08:00\",\"endTime\":\"10:00\",\"active\":false}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.active").value(false))
+                .andReturn().getResponse().getContentAsString();
+        long ruleId = ((Number) JsonPath.read(created, "$.data.id")).longValue();
+
+        // active omitted: a deactivated rule must stay deactivated (D-1).
+        callAuthenticated(HttpMethod.PUT, "/v1/availability-rules/" + ruleId,
+                "{\"dayOfWeek\":4,\"startTime\":\"08:30\",\"endTime\":\"10:00\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.startTime").value("08:30:00"))
+                .andExpect(jsonPath("$.data.active").value(false));
+
+        // An explicit value still applies.
+        callAuthenticated(HttpMethod.PUT, "/v1/availability-rules/" + ruleId,
+                "{\"dayOfWeek\":4,\"startTime\":\"08:30\",\"endTime\":\"10:00\",\"active\":true}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.active").value(true));
+    }
+
+    @Test
     void equalOrReversedTimeRangeReturns400InvalidTimeRange() throws Exception {
         callAuthenticated(HttpMethod.POST, "/v1/availability-rules",
                 "{\"dayOfWeek\":3,\"startTime\":\"10:00\",\"endTime\":\"10:00\"}")

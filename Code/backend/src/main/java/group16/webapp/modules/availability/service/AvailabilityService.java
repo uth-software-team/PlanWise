@@ -71,7 +71,10 @@ public class AvailabilityService implements AvailabilityApi {
         entity.setDayOfWeek(request.dayOfWeek().shortValue());
         entity.setStartTime(request.startTime());
         entity.setEndTime(request.endTime());
-        entity.setActive(request.active() != null ? request.active() : true);
+        // Omitted active keeps the current value; it must not silently re-enable a deactivated rule (TV1, D-1).
+        if (request.active() != null) {
+            entity.setActive(request.active());
+        }
 
         AvailabilityRuleEntity saved = ruleRepository.saveAndFlush(entity);
         return toResponse(saved);

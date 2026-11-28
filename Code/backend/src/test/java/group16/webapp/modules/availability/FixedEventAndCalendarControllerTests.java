@@ -29,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -230,6 +231,25 @@ class FixedEventAndCalendarControllerTests extends AuthenticatedMvcTest {
         assertThat(busy).containsExactly(
                 new TimeRange(Instant.parse("2026-11-24T02:00:00Z"), Instant.parse("2026-11-24T03:30:00Z"))
         );
+    }
+
+    @Test
+    void calendarWindowIsCappedAt366Days() throws Exception {
+        // D14: end - start <= 366 days at full Instant precision; one second over is 400.
+        Instant start = Instant.parse("2026-01-01T00:00:00Z");
+        Instant exactly366 = start.plus(Duration.ofDays(366));
+
+        callAuthenticated(HttpMethod.GET, "/v1/calendar?start=" + start + "&end=" + exactly366, null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        callAuthenticated(HttpMethod.GET, "/v1/calendar?start=" + start + "&end=" + exactly366.plusSeconds(1), null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
+
+        callAuthenticated(HttpMethod.GET, "/v1/calendar?start=" + start + "&end=" + start, null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_TIME_RANGE"));
     }
 
     private ResultActions callWithToken(String bearerToken, HttpMethod method, String uri, String jsonBody) throws Exception {

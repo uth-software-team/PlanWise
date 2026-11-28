@@ -14,8 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import group16.webapp.modules.auth.entity.User;
 import group16.webapp.modules.auth.repository.UserRepository;
 import group16.webapp.modules.auth.service.JwtService;
-import group16.webapp.modules.availability.api.CalendarApi;
 import group16.webapp.modules.availability.api.TimeRange;
+import group16.webapp.modules.availability.service.CalendarService;
 import group16.webapp.modules.group.api.GroupRole;
 import group16.webapp.modules.group.entity.GroupMember;
 import group16.webapp.modules.group.entity.TeamGroup;
@@ -55,8 +55,9 @@ class GroupAvailabilityControllerTests extends AuthenticatedMvcTest {
 	private static final Instant START_AT = Instant.parse(START);
 	private static final Instant END_AT = Instant.parse(END);
 
+	// Mocks the CalendarApi implementation by its class: CalendarController injects CalendarService directly.
 	@MockitoBean
-	private CalendarApi calendarApi;
+	private CalendarService calendarApi;
 
 	@Autowired
 	private UserRepository userRepository;

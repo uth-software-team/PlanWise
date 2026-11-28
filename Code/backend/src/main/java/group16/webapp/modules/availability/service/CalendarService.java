@@ -2,6 +2,7 @@ package group16.webapp.modules.availability.service;
 
 import group16.webapp.common.exception.AppException;
 import group16.webapp.common.exception.ErrorCode;
+import group16.webapp.common.util.DateUtils;
 import group16.webapp.modules.availability.api.CalendarApi;
 import group16.webapp.modules.availability.api.TimeRange;
 import group16.webapp.modules.availability.dto.CalendarResponse;
@@ -39,7 +40,8 @@ public class CalendarService implements CalendarApi {
 
     @Transactional(readOnly = true)
     public CalendarResponse getCalendar(Long userId, Instant start, Instant end) {
-        if (start == null || end == null || !start.isBefore(end)) {
+        // D14: start < end and end - start <= 366 days.
+        if (start == null || end == null || !start.isBefore(end) || DateUtils.exceedsMaxQueryRange(start, end)) {
             throw new AppException(ErrorCode.INVALID_TIME_RANGE);
         }
 
