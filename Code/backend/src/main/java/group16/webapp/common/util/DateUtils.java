@@ -17,7 +17,8 @@ public final class DateUtils {
     public static final String DEFAULT_TIMEZONE = "Asia/Ho_Chi_Minh";
 
     /**
-     * Longest query window accepted by calendar, group availability and schedule generate (TV1, 2026-11-28).
+     * Longest query window accepted by calendar, group availability and schedule generate, and longest batch span
+     * after a session edit (TV1, 2026-11-28, D14).
      * Exactly 366 days is allowed; anything longer is 400 INVALID_TIME_RANGE.
      */
     public static final Duration MAX_QUERY_RANGE = Duration.ofDays(366);
