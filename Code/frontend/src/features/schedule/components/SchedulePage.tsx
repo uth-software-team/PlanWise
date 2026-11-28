@@ -15,6 +15,10 @@ import { EditSessionModal } from './EditSessionModal'
 import { GenerateScheduleModal } from './GenerateScheduleModal'
 import { ProposalReviewBar } from './ProposalReviewBar'
 
+// Dev-only (SA-11): a production build must never ask users to paste a token. Vite replaces
+// `import.meta.env.DEV` with `false` in `vite build`, so the bar is dropped from the bundle.
+const TOKEN_BAR_ENABLED = import.meta.env.DEV
+
 function getVisibleRange(anchor: Date, mode: 'week' | 'day'): { start: Date; end: Date } {
   const start = new Date(anchor)
   if (mode === 'week') {
@@ -140,15 +144,17 @@ export function SchedulePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowTokenBar((v) => !v)}
-            >
-              <KeyRound className="h-4 w-4" />
-              JWT Token
-            </Button>
+            {TOKEN_BAR_ENABLED && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowTokenBar((v) => !v)}
+              >
+                <KeyRound className="h-4 w-4" />
+                JWT Token
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -174,8 +180,8 @@ export function SchedulePage() {
           </div>
         </div>
 
-        {/* Optional JWT Token Bar for Standalone Testing */}
-        {showTokenBar && (
+        {/* Optional JWT Token Bar for Standalone Testing (dev server only) */}
+        {TOKEN_BAR_ENABLED && showTokenBar && (
           <div className="border-t border-slate-200 bg-slate-100/80 px-4 py-2.5 sm:px-6">
             <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2">
               <span className="text-xs font-medium text-slate-600">Bearer Token:</span>
