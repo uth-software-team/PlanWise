@@ -23,7 +23,7 @@ import java.util.TreeSet;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OpenApiContractTests extends AuthenticatedMvcTest {
 
-	/** The 40 MVP operations under /api (design doc table 4.3 minus P1 cuts and /join, plus CG-11). */
+	/** The 41 MVP operations under /api (design doc table 4.3 minus P1 cuts and /join, plus CG-11 and D16 transfer). */
 	static final Set<String> EXPECTED_OPERATIONS = Set.of(
 			"POST /v1/auth/register", "POST /v1/auth/login", "POST /v1/auth/logout",
 			"GET /v1/users/me", "PUT /v1/users/me",
@@ -36,7 +36,8 @@ class OpenApiContractTests extends AuthenticatedMvcTest {
 			"GET /v1/calendar",
 			"GET /v1/groups", "POST /v1/groups", "GET /v1/groups/{id}", "PUT /v1/groups/{id}",
 			"POST /v1/groups/{id}/members", "PATCH /v1/groups/{id}/members/{userId}",
-			"DELETE /v1/groups/{id}/members/{userId}", "GET /v1/groups/{id}/availability",
+			"DELETE /v1/groups/{id}/members/{userId}", "POST /v1/groups/{id}/transfer-leadership",
+			"GET /v1/groups/{id}/availability",
 			"GET /v1/assignments", "POST /v1/assignments", "POST /v1/assignments/{id}/accept",
 			"POST /v1/assignments/{id}/decline", "POST /v1/assignments/{id}/revoke",
 			"POST /v1/schedules/generate", "GET /v1/schedules/proposals/{proposalId}",
@@ -59,7 +60,7 @@ class OpenApiContractTests extends AuthenticatedMvcTest {
 
 	@Test
 	void exposesExactlyTheMvpOperations() {
-		assertThat(EXPECTED_OPERATIONS).hasSize(40);
+		assertThat(EXPECTED_OPERATIONS).hasSize(41);
 		assertThat(operations(docs)).containsExactlyInAnyOrderElementsOf(EXPECTED_OPERATIONS);
 	}
 

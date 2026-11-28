@@ -7,9 +7,8 @@ import group16.webapp.common.exception.ErrorCode;
 import group16.webapp.modules.auth.entity.User;
 import group16.webapp.modules.auth.repository.UserRepository;
 import group16.webapp.modules.group.api.GroupRole;
-import group16.webapp.modules.group.api.MembershipStatus;
 import group16.webapp.modules.group.dto.GroupRequest;
-import group16.webapp.modules.group.dto.RoleUpdateRequest;
+import group16.webapp.modules.group.dto.LeaderTransferRequest;
 import group16.webapp.modules.group.entity.GroupMember;
 import group16.webapp.modules.group.entity.TeamGroup;
 import group16.webapp.modules.group.repository.GroupMemberRepository;
@@ -25,19 +24,20 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.concurrent.Callable;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Two ACTIVE LEADERs leave the same group at the same time. The group row lock serializes the two service
- * transactions, so exactly one leaves and the other gets 409 DATA_CONFLICT; one ACTIVE LEADER always remains.
+ * Leadership hand-over on real PostgreSQL with the V11 index (B18) and concurrent membership writes (P1-P4).
+ * The group row lock serializes the service transactions: the first call keeps its transaction (and the lock) open,
+ * the second is proven to be blocked on the lock, then the first commits and the second re-reads the new state.
+ * Every case checks each member's final role and status and that exactly one ACTIVE LEADER remains.
  * Deliberately not {@code @Transactional}: each worker thread runs its own committed service transaction.
  */
 class GroupMembershipConcurrencyPgTests extends PostgresContainerTest {
@@ -64,6 +64,9 @@ class GroupMembershipConcurrencyPgTests extends PostgresContainerTest {
 
 	private Long groupId;
 	private final List<Long> userIds = new ArrayList<>();
+	private Long a;
+	private Long b;
+	private Long c;
 
 	@AfterEach
 	void cleanUp() {
@@ -77,154 +80,161 @@ class GroupMembershipConcurrencyPgTests extends PostgresContainerTest {
 		}
 	}
 
+	// ---------- B18: the hand-over write order is accepted by the V11 index ----------
+
 	@Test
-	void twoLeadersLeavingConcurrentlyLeaveExactlyOneActiveLeader() throws Exception {
-		User first = newUser("pg-leader-1@example.com");
-		User second = newUser("pg-leader-2@example.com");
-		groupId = groupRepository.save(new TeamGroup(first.getId(), "Concurrent", "desc")).getId();
-		memberRepository.save(new GroupMember(groupId, first.getId(), GroupRole.LEADER, Instant.now()));
-		memberRepository.save(new GroupMember(groupId, second.getId(), GroupRole.LEADER, Instant.now()));
-		assertThat(activeLeaders()).isEqualTo(2);
+	void transferAndLeaderLeaveSucceedWithTheIndexInPlace() {
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_indexes WHERE indexname = "
+				+ "'uk_group_members_one_active_leader'", Integer.class)).as("V11 index present").isEqualTo(1);
+		fixture("b18");
 
-		CyclicBarrier barrier = new CyclicBarrier(2);
-		ExecutorService executor = Executors.newFixedThreadPool(2);
-		try {
-			Future<ErrorCode> a = executor.submit(leave(barrier, first.getId()));
-			Future<ErrorCode> b = executor.submit(leave(barrier, second.getId()));
-			List<ErrorCode> outcomes = Arrays.asList(a.get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
-					b.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+		groupService.transferLeadership(a, groupId, new LeaderTransferRequest(b));
+		assertStates(Map.of(a, "MEMBER/ACTIVE", b, "LEADER/ACTIVE", c, "MEMBER/ACTIVE"));
 
-			// null = the call succeeded.
-			assertThat(outcomes).containsExactlyInAnyOrder(null, ErrorCode.DATA_CONFLICT);
-		} finally {
-			executor.shutdownNow();
-			assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-		}
-
-		assertThat(activeLeaders()).isEqualTo(1);
-		assertThat(jdbc.queryForObject(
-				"SELECT count(*) FROM group_members WHERE group_id = ? AND status = 'INACTIVE' AND left_at IS NOT NULL",
-				Integer.class, groupId)).isEqualTo(1);
+		// B is the LEADER now; A joined first, so A is B's successor.
+		groupService.removeMember(b, groupId, b, a);
+		assertStates(Map.of(a, "LEADER/ACTIVE", b, "LEADER/INACTIVE", c, "MEMBER/ACTIVE"));
 	}
 
-	/**
-	 * Regression: updateGroup must lock the group before checking the caller's role. The creator's demotion of the
-	 * leader holds the group lock in an open transaction; the leader's rename blocks on that lock, and only after the
-	 * demotion commits does it see that the caller is no longer a LEADER. No sleeps: the rename is known to be
-	 * blocked when PostgreSQL reports a backend waiting on a lock, and every wait is bounded.
-	 */
+	// ---------- P1: transfer(A->B) vs leave(A, expected B) ----------
+
 	@Test
-	void renameBlockedBehindDemotionIsForbiddenAndLeavesGroupUnchanged() throws Exception {
-		User creator = newUser("pg-creator@example.com");
-		User leader = newUser("pg-demoted@example.com");
-		groupId = groupRepository.save(new TeamGroup(creator.getId(), "Original", "original desc")).getId();
-		memberRepository.save(new GroupMember(groupId, creator.getId(), GroupRole.LEADER, Instant.now()));
-		memberRepository.save(new GroupMember(groupId, leader.getId(), GroupRole.LEADER, Instant.now()));
+	void transferBeforeLeaveMakesTheLeaveStale() throws Exception {
+		fixture("p1t");
 
-		CountDownLatch demotedUncommitted = new CountDownLatch(1);
-		CountDownLatch commitDemotion = new CountDownLatch(1);
-		ExecutorService executor = Executors.newFixedThreadPool(2);
-		try {
-			// Transaction 1: the creator demotes the leader and keeps the transaction (and group lock) open.
-			Future<?> demotion = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-				groupService.changeMemberRole(creator.getId(), groupId, leader.getId(), new RoleUpdateRequest(GroupRole.MEMBER));
-				demotedUncommitted.countDown();
-				await(commitDemotion);
-			}));
-			assertThat(demotedUncommitted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+		ErrorCode second = serialized(() -> groupService.transferLeadership(a, groupId, new LeaderTransferRequest(b)),
+				() -> groupService.removeMember(a, groupId, a, b));
 
-			// Transaction 2: the demoted leader renames the group; it must block behind the lock.
-			Future<ErrorCode> rename = executor.submit(() -> {
-				try {
-					groupService.updateGroup(leader.getId(), groupId, new GroupRequest("Hijacked", "changed"));
-					return null;
-				} catch (AppException e) {
-					return e.getErrorCode();
-				}
-			});
-			awaitBlockedOnLock();
-			assertThat(rename.isDone()).as("rename is blocked until the demotion commits").isFalse();
+		assertThat(second).isEqualTo(ErrorCode.STALE_VERSION);
+		assertStates(Map.of(a, "MEMBER/ACTIVE", b, "LEADER/ACTIVE", c, "MEMBER/ACTIVE"));
+	}
 
-			commitDemotion.countDown();
-			demotion.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			assertThat(rename.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo(ErrorCode.FORBIDDEN);
-		} finally {
-			commitDemotion.countDown();
-			executor.shutdownNow();
-			assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
-		}
+	@Test
+	void leaveBeforeTransferMakesTheTransferForbidden() throws Exception {
+		fixture("p1l");
 
+		ErrorCode second = serialized(() -> groupService.removeMember(a, groupId, a, b),
+				() -> groupService.transferLeadership(a, groupId, new LeaderTransferRequest(b)));
+
+		assertThat(second).isEqualTo(ErrorCode.FORBIDDEN);
+		assertStates(Map.of(a, "LEADER/INACTIVE", b, "LEADER/ACTIVE", c, "MEMBER/ACTIVE"));
+	}
+
+	// ---------- P2: transfer(A->B) vs transfer(A->C) ----------
+
+	@Test
+	void secondConcurrentTransferIsForbidden() throws Exception {
+		fixture("p2");
+
+		ErrorCode second = serialized(() -> groupService.transferLeadership(a, groupId, new LeaderTransferRequest(b)),
+				() -> groupService.transferLeadership(a, groupId, new LeaderTransferRequest(c)));
+
+		assertThat(second).isEqualTo(ErrorCode.FORBIDDEN);
+		assertStates(Map.of(a, "MEMBER/ACTIVE", b, "LEADER/ACTIVE", c, "MEMBER/ACTIVE"));
+	}
+
+	// ---------- P3: leave(A, expected B) vs leave(B) ----------
+
+	@Test
+	void successorLeavingFirstMakesTheLeaderLeaveStale() throws Exception {
+		fixture("p3b");
+
+		ErrorCode second = serialized(() -> groupService.removeMember(b, groupId, b, null),
+				() -> groupService.removeMember(a, groupId, a, b));
+
+		// The successor is now C, so A's request no longer matches.
+		assertThat(second).isEqualTo(ErrorCode.STALE_VERSION);
+		assertStates(Map.of(a, "LEADER/ACTIVE", b, "MEMBER/INACTIVE", c, "MEMBER/ACTIVE"));
+	}
+
+	@Test
+	void leaderLeavingFirstMakesTheSuccessorLeaveStale() throws Exception {
+		fixture("p3a");
+
+		ErrorCode second = serialized(() -> groupService.removeMember(a, groupId, a, b),
+				() -> groupService.removeMember(b, groupId, b, null));
+
+		// B became LEADER, but B's request was sent as a MEMBER (no successor).
+		assertThat(second).isEqualTo(ErrorCode.STALE_VERSION);
+		assertStates(Map.of(a, "LEADER/INACTIVE", b, "LEADER/ACTIVE", c, "MEMBER/ACTIVE"));
+	}
+
+	// ---------- P4: transfer vs rename by the former LEADER ----------
+
+	@Test
+	void renameBlockedBehindTransferIsForbiddenAndLeavesGroupUnchanged() throws Exception {
+		fixture("p4");
+
+		ErrorCode second = serialized(() -> groupService.transferLeadership(a, groupId, new LeaderTransferRequest(b)),
+				() -> groupService.updateGroup(a, groupId, new GroupRequest("Hijacked", "changed")));
+
+		assertThat(second).isEqualTo(ErrorCode.FORBIDDEN);
 		TeamGroup stored = groupRepository.findById(groupId).orElseThrow();
 		assertThat(stored.getGroupName()).isEqualTo("Original");
 		assertThat(stored.getDescription()).isEqualTo("original desc");
-		assertThat(memberRepository.findByGroupIdAndUserId(groupId, leader.getId()).orElseThrow().getRole())
-				.isEqualTo(GroupRole.MEMBER);
+		assertStates(Map.of(a, "MEMBER/ACTIVE", b, "LEADER/ACTIVE", c, "MEMBER/ACTIVE"));
 	}
 
 	/**
-	 * Regression for the peer-leader rule (any ACTIVE LEADER may demote another, none of them the creator) and for
-	 * lock-before-role-check: A and B are the only ACTIVE LEADERs (the creator has left) and demote each other. A's
-	 * demotion of B holds the group lock in an open transaction; B's demotion of A blocks on that lock and, once A
-	 * commits, rechecks B's role and is FORBIDDEN. Exactly one ACTIVE LEADER and one ACTIVE MEMBER remain.
+	 * Runs {@code first} in a transaction kept open (holding the group lock), starts {@code second}, waits until
+	 * PostgreSQL reports it blocked on a lock, then commits {@code first}. No sleeps; every wait is bounded.
+	 * Returns null when {@code second} succeeded, else its AppException code.
 	 */
-	@Test
-	void twoLeadersDemotingEachOtherLeaveExactlyOneActiveLeader() throws Exception {
-		User creator = newUser("pg-mutual-creator@example.com");
-		User leaderA = newUser("pg-mutual-a@example.com");
-		User leaderB = newUser("pg-mutual-b@example.com");
-		groupId = groupRepository.save(new TeamGroup(creator.getId(), "Mutual", "desc")).getId();
-		GroupMember formerCreator = new GroupMember(groupId, creator.getId(), GroupRole.LEADER, Instant.now());
-		formerCreator.deactivate(Instant.now());
-		memberRepository.save(formerCreator);
-		memberRepository.save(new GroupMember(groupId, leaderA.getId(), GroupRole.LEADER, Instant.now()));
-		memberRepository.save(new GroupMember(groupId, leaderB.getId(), GroupRole.LEADER, Instant.now()));
-		assertThat(activeLeaders()).isEqualTo(2);
-
-		CountDownLatch demotedUncommitted = new CountDownLatch(1);
-		CountDownLatch commitDemotion = new CountDownLatch(1);
+	private ErrorCode serialized(Runnable first, Runnable second) throws Exception {
+		CountDownLatch firstDone = new CountDownLatch(1);
+		CountDownLatch commitFirst = new CountDownLatch(1);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
-			// Transaction 1: A demotes B and keeps the transaction (and group lock) open.
-			Future<?> first = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
-				groupService.changeMemberRole(leaderA.getId(), groupId, leaderB.getId(), new RoleUpdateRequest(GroupRole.MEMBER));
-				demotedUncommitted.countDown();
-				await(commitDemotion);
+			Future<?> firstTx = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+				first.run();
+				firstDone.countDown();
+				await(commitFirst);
 			}));
-			assertThat(demotedUncommitted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+			assertThat(firstDone.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).as("first call ran").isTrue();
 
-			// Transaction 2: B demotes A; it must block behind the lock.
-			Future<ErrorCode> second = executor.submit(() -> {
+			Future<ErrorCode> secondTx = executor.submit(() -> {
 				try {
-					groupService.changeMemberRole(leaderB.getId(), groupId, leaderA.getId(), new RoleUpdateRequest(GroupRole.MEMBER));
+					second.run();
 					return null;
 				} catch (AppException e) {
 					return e.getErrorCode();
 				}
 			});
 			awaitBlockedOnLock();
-			assertThat(second.isDone()).as("B's demotion is blocked until A's demotion commits").isFalse();
+			assertThat(secondTx.isDone()).as("second call is blocked until the first commits").isFalse();
 
-			commitDemotion.countDown();
-			first.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			assertThat(second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isEqualTo(ErrorCode.FORBIDDEN);
+			commitFirst.countDown();
+			firstTx.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			return secondTx.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 		} finally {
-			commitDemotion.countDown();
+			commitFirst.countDown();
 			executor.shutdownNow();
 			assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
 		}
+	}
 
-		assertThat(activeLeaders()).isEqualTo(1);
-		assertThat(jdbc.queryForObject(
-				"SELECT count(*) FROM group_members WHERE group_id = ? AND role = 'MEMBER' AND status = 'ACTIVE'",
-				Integer.class, groupId)).isEqualTo(1);
-		GroupMember a = memberRepository.findByGroupIdAndUserId(groupId, leaderA.getId()).orElseThrow();
-		GroupMember b = memberRepository.findByGroupIdAndUserId(groupId, leaderB.getId()).orElseThrow();
-		assertThat(a.getRole()).isEqualTo(GroupRole.LEADER);
-		assertThat(a.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-		assertThat(b.getRole()).isEqualTo(GroupRole.MEMBER);
-		assertThat(b.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
-		assertThat(memberRepository.findByGroupIdAndUserId(groupId, creator.getId()).orElseThrow().getStatus())
-				.isEqualTo(MembershipStatus.INACTIVE);
+	/** A is the ACTIVE LEADER; B and C are MEMBERs with active accounts; join order A, B, C. */
+	private void fixture(String prefix) {
+		a = newUser("pg-" + prefix + "-a@example.com").getId();
+		b = newUser("pg-" + prefix + "-b@example.com").getId();
+		c = newUser("pg-" + prefix + "-c@example.com").getId();
+		groupId = groupRepository.save(new TeamGroup(a, "Original", "original desc")).getId();
+		Instant t = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+		memberRepository.save(new GroupMember(groupId, a, GroupRole.LEADER, t));
+		memberRepository.save(new GroupMember(groupId, b, GroupRole.MEMBER, t.plusSeconds(1)));
+		memberRepository.save(new GroupMember(groupId, c, GroupRole.MEMBER, t.plusSeconds(2)));
+	}
+
+	/** Each member's "ROLE/STATUS", plus exactly one ACTIVE LEADER in the group. */
+	private void assertStates(Map<Long, String> expected) {
+		Map<Long, String> actual = new LinkedHashMap<>();
+		jdbc.query("SELECT user_id, role, status FROM group_members WHERE group_id = ?",
+				rs -> { actual.put(rs.getLong("user_id"), rs.getString("role") + "/" + rs.getString("status")); },
+				groupId);
+		assertThat(actual).containsExactlyInAnyOrderEntriesOf(expected);
+		assertThat(activeLeaders()).as("exactly one ACTIVE LEADER").isEqualTo(1);
+		assertThat(jdbc.queryForObject("SELECT count(*) FROM group_members WHERE group_id = ? AND "
+				+ "((status = 'INACTIVE') <> (left_at IS NOT NULL))", Integer.class, groupId)).isZero();
 	}
 
 	private static void await(CountDownLatch latch) {
@@ -250,19 +260,6 @@ class GroupMembershipConcurrencyPgTests extends PostgresContainerTest {
 			java.util.concurrent.locks.LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(20));
 		}
 		throw new IllegalStateException("the second transaction never blocked on the group lock");
-	}
-
-	/** Waits for the other thread, then self-leaves; returns null on success or the AppException's code. */
-	private Callable<ErrorCode> leave(CyclicBarrier barrier, Long userId) {
-		return () -> {
-			barrier.await(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			try {
-				groupService.removeMember(userId, groupId, userId);
-				return null;
-			} catch (AppException e) {
-				return e.getErrorCode();
-			}
-		};
 	}
 
 	private User newUser(String email) {
