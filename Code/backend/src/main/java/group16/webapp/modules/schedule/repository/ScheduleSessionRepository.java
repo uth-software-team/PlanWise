@@ -14,5 +14,7 @@ public interface ScheduleSessionRepository extends JpaRepository<ScheduleSession
     Optional<ScheduleSession> findByIdAndUserId(Long id, Long userId);
     List<ScheduleSession> findByUserIdAndStatusInAndStartAtLessThanAndEndAtGreaterThan(
             Long userId, Collection<SessionStatus> statuses, Instant endAt, Instant startAt);
-    List<ScheduleSession> findByUserIdAndStatusIn(Long userId, Collection<SessionStatus> statuses);
+    /** The user's sessions of the given tasks and statuses (remaining-duration check; never the whole history). */
+    List<ScheduleSession> findByUserIdAndTaskIdInAndStatusIn(
+            Long userId, Collection<Long> taskIds, Collection<SessionStatus> statuses);
 }

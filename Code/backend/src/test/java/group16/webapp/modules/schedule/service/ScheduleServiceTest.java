@@ -123,7 +123,7 @@ class ScheduleServiceTest {
         proposal.setVersion(3);
 
         when(sessionRepository.findByIdAndUserId(50L, 1L)).thenReturn(Optional.of(session));
-        when(proposalRepository.findByIdAndUserId(100L, 1L)).thenReturn(Optional.of(proposal));
+        when(proposalRepository.findByIdAndUserIdForUpdate(100L, 1L)).thenReturn(Optional.of(proposal));
 
         Instant s = Instant.now().plus(2, ChronoUnit.HOURS);
         Instant e = s.plus(1, ChronoUnit.HOURS);
@@ -187,7 +187,7 @@ class ScheduleServiceTest {
         sibling.setStatus(SessionStatus.PROPOSED);
 
         when(sessionRepository.findByIdAndUserId(50L, 1L)).thenReturn(Optional.of(edited));
-        when(proposalRepository.findByIdAndUserId(100L, 1L)).thenReturn(Optional.of(proposal));
+        when(proposalRepository.findByIdAndUserIdForUpdate(100L, 1L)).thenReturn(Optional.of(proposal));
         when(sessionRepository.findByProposalIdOrderByStartAtAsc(100L)).thenReturn(List.of(sibling, edited));
     }
 
@@ -221,7 +221,7 @@ class ScheduleServiceTest {
         when(taskApi.schedulableTasks(1L, Set.of())).thenReturn(List.of(
                 new SchedulableTask(10L, end.plus(2, ChronoUnit.HOURS), TaskPriority.HIGH, 60, Instant.now())
         ));
-        when(sessionRepository.findByUserIdAndStatusIn(eq(1L), any())).thenReturn(List.of());
+        when(sessionRepository.findByUserIdAndTaskIdInAndStatusIn(eq(1L), eq(Set.of(10L)), any())).thenReturn(List.of());
         when(taskApi.summaries(anyList())).thenReturn(List.of(
                 new TaskSummary(10L, null, "Algorithm Lab", end.plus(2, ChronoUnit.HOURS), TaskPriority.HIGH, TaskStatus.TODO)
         ));
@@ -232,5 +232,7 @@ class ScheduleServiceTest {
         assertEquals(2, res.version());
         assertNotNull(res.confirmedAt());
         assertEquals(SessionStatus.CONFIRMED, res.sessions().get(0).status());
+        // SA-15: committed minutes are read only for the schedulable tasks, never the user's whole history.
+        verify(sessionRepository).findByUserIdAndTaskIdInAndStatusIn(eq(1L), eq(Set.of(10L)), any());
     }
 }
