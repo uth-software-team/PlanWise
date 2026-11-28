@@ -7,10 +7,10 @@ Persistent development state. Keep concise, evidence-based, and up to date.
 - Project: PlanWise AI (task management + smart scheduling web app)
 - Stack: Spring Boot backend (Java 25, Spring Boot 4.1.x, Gradle 9.8, PostgreSQL/H2); React frontend
 - Architecture: See CLAUDE.md, Code/backend/CLAUDE.md, Code/frontend/CLAUDE.md
-- Branch: `develop` = origin/develop 78549de (#52–#59, #63 merged since 1a91375). Working branch: `feature/fe-groups` (FE-GR-01, TV1, not committed: `features/groups/`, router.tsx, check-api-client.mjs)
+- Branch: `develop` = origin/develop 6ed79fe (#54, #63–#66 merged since 78549de). Open: #67 `fix/fixed-event-weekly-expansion` (TV1), #60/#62 (Khoi12vn). Local merged branches pending cleanup by TV1
 - Last reviewed commit: 0df1ec9 (squash tree == #49 head 43f8500); #49/#50/#51 diffs reviewed by Claude (docs/reviews/PR_REVIEW.md)
-- Current milestone: backend Tasks (#55), Availability/Fixed Events/Calendar (#56), Auth FE (#52), D16 (#63) merged. Still 501 on `develop`: assignments (AS-01/02), AI parse (AI-02). Gate "6 demo flows via UI" 2026-11-30; deadline 2026-12-03 (4 days)
-- Updated: 2026-11-29 (R-03 AS-01/AS-02 implemented in worktree `../PlanWise-r03`, branch `feature/assignment-takeover`, not committed)
+- Current milestone: backend Tasks (#55), Availability/Fixed Events/Calendar (#56), Auth FE (#52), D16 (#63), Groups UI (#64, #66), assignments AS-01/02 (#65) merged. Still 501 on `develop`: AI parse (AI-02). Gate "6 demo flows via UI" 2026-11-30; deadline 2026-12-03 (4 days)
+- Updated: 2026-11-29 (session closeout: develop synced to 6ed79fe, worktree `../PlanWise-r03` removed)
 - Recovery (TV1 takeover of TV2–TV4 tasks, R-01..R-09): see docs/RECOVERY_STATE.md
 
 ## Progress
@@ -39,14 +39,15 @@ Persistent development state. Keep concise, evidence-based, and up to date.
 | FE-AU | Login / Register / Profile (Settings) + UserMenu, TV1 (`feature/fe-auth` from origin/develop 1a91375) | IMPLEMENTED | Not committed (2026-11-28). `features/auth` (LoginPage, RegisterPage, SettingsPage, session.ts, authApi.ts), `lib/safe-redirect.ts` (SA-13), `ApiError.fieldErrors`, PublicOnlyRoute, router, UserMenu, shadcn input/label. Local: lint, format:check, `tsc -b`, build OK (bundle 500.40 kB > 500 kB warning, was 483 kB); check:api-client 19/19 (T1–T13); smoke through Vite proxy on isolated H2 (`fe_au_smoke`, Flyway off, create-drop: migration V5 fails on H2) 14 cases as expected + I2–I3 2/2. Browser UI checklist NOT_RUN (TV1). Settings limited to Profile; no "Quên mật khẩu?" (no backend endpoint); dev token bar kept (SA-11) | TV1 UI checklist; review (TV3/TV4 or D12), Codex, ACCEPT |
 | TK-01 | Personal task CRUD + TaskApi (R-01, takeover of #35) | IMPLEMENTED | Merged as 55e4255 (#55). Post-merge build/pgTest on develop not run this session | — |
 | AV-02 | Availability rules + fixed events + calendar (R-02, AV-02/03/04, CAL-01, AV-05) | IMPLEMENTED | Merged as bf4e6dd (#56). `GroupAvailabilityServiceImpl` 501 now only when no `CalendarApi` bean. Post-merge build/pgTest not run this session | — |
-| AS-01 | Task assignment backend (R-03, AS-01/AS-02 + AS-PG) | IMPLEMENTED | Worktree `../PlanWise-r03`, `feature/assignment-takeover` from 78549de, not committed. `./gradlew --offline --rerun-tasks build pgTest` 9/9 tasks (2026-11-29): `test` 33 files 402 tests, `pgTest` 9 files 180 tests, 0 failures/errors/skipped. New `AssignmentControllerTests` 15/15 fail on the 501 stub controller. `exportOpenApi`: no diff. IDE diagnostics not verifiable (worktree outside workspace). Details: docs/RECOVERY_STATE.md | TV1 commit/PR; review; ACCEPT |
+| AS-01 | Task assignment backend (R-03, AS-01/AS-02 + AS-PG) | IMPLEMENTED | Merged as 6ed79fe (#65, 2026-11-29). Pre-PR local run `./gradlew --offline --rerun-tasks build pgTest` 9/9 tasks: `test` 402, `pgTest` 180, 0 failures. Post-merge build/pgTest on develop not run this session. Details: docs/RECOVERY_STATE.md | — |
 | AI-02 | AI task parsing (R-06) | IN_PROGRESS | AI-01 on `origin/feature/ai-client` 1349863 (kietit2k6, 1 commit ahead), no PR. `AiController` still 501 on develop | AI-01 PR; C-4 FakeAiClient rule |
-| FE-GR-01 | Groups UI (R-08, TV1) | IN_PROGRESS | `feature/fe-groups`, uncommitted (2026-11-29). Lint/build/tests not run this session | — |
+| FE-GR-01 | Groups UI (R-08, TV1) | IMPLEMENTED | Split into FE-GR-01a (#64) and FE-GR-01b (#66), both merged. Browser E2E NOT_RUN | TV1 E2E |
 | FE-TK / FE-AV | Tasks UI #60, Availability UI #62 (Khoi12vn) | IN_PROGRESS | Open, REVIEW_REQUIRED (checked 2026-11-29) | Peer review + TV1 ACCEPT |
-| IT-01 | E2E checklist for the 6 demo flows (`docs/e2e/demo-flows.md`, TV1) | IMPLEMENTED | Branch `docs/e2e-demo-flows` from 1a91375, not committed (2026-11-28). Per flow: preconditions, UI steps, expected results with error codes and BR refs, negative cases, result columns; shared setup (PostgreSQL, accounts A/B/C, day D), bug log, gate criteria. 24 endpoints and 7 error codes checked against `openapi-v1.json` / `ErrorCode`. Readiness at 1a91375: flow 1 needs #52; tasks, availability rules, fixed events, calendar, assignments and AI still answer 501 on `develop`; no FE branch from TV2–TV4 on origin, so flows 2–6 cannot run through the UI yet | Review; TV1 decision on gate risk |
-| GR-D16 | One ACTIVE LEADER per group: transfer endpoint, successor-checked leave, PATCH role locked, unique index (TV1) | IMPLEMENTED | #58 merged as d551532 (2026-11-29). Draft rollback #59 then merged by mistake as 26a37de (V12 dropped the index, code back to D8). Re-enable on `fix/group-single-leader-reenable` from 26a37de, not committed: code/tests/artifacts == d551532, V11/V12 kept, V13 recreates guard + index; guard test covers V11 and V13 (DB at V12 with a 2nd LEADER). Test results: see Evidence of the re-enable PR. E7 and cutover M1–M6 (now V13) NOT_RUN. #61 (old branch reopened) closed: conflicted and lacked V13 | TV1 commit/PR; review (no D12); new M0 drafts titled `[DO NOT MERGE]` with V14; M1–M6 per DB |
+| IT-01 | E2E checklist for the 6 demo flows (`docs/e2e/demo-flows.md`, TV1) | IMPLEMENTED | Merged as 3e38bed (#54). Readiness notes in the file were written at 1a91375; tasks, availability, calendar, assignments now implemented on develop, AI still 501; FE for flows 2–3 in open #60/#62 | Review; TV1 decision on gate risk |
+| GR-D16 | One ACTIVE LEADER per group: transfer endpoint, successor-checked leave, PATCH role locked, unique index (TV1) | IMPLEMENTED | #58 merged as d551532 (2026-11-29). Draft rollback #59 then merged by mistake as 26a37de (V12 dropped the index, code back to D8). Re-enabled by #63 (merged as 78549de): code/tests/artifacts == d551532, V11/V12 kept, V13 recreates guard + index. E7 and cutover M1–M6 (now V13) NOT_RUN. #61 (old branch reopened) closed: conflicted and lacked V13 | M1–M6 per DB; new M0 drafts titled `[DO NOT MERGE]` with V14 |
 | FE-GR-01a | Groups UI: list, create, detail, add member by email (TV1) | IMPLEMENTED | Merged as #64 (607725e, 2026-11-29). Browser E2E steps 1–11 NOT_RUN (TV1/TV4) | TV1 E2E 1–11 |
-| FE-GR-01b | Groups UI: transfer leadership, leave (3 variants, successor from `successorUserId`), LEADER removes member (TV1, `feature/fe-groups-manage` from develop 607725e) | IMPLEMENTED | Not committed (2026-11-29). Store writes unified in `runWrite`; ConfirmDialog, LeaveGroupDialog; GroupDialog focus fallback. Local: lint, format:check, build OK (bundle 524.81 kB, > 500 kB warning existed); check:api-client 34/34 incl. T15a–T15g; mutation (W2 counter bump removed) caught by T15a. Browser E2E steps 12–34 NOT_RUN (TV1/TV4) | TV1 E2E 12–34; commit/PR; review (TV4) |
+| FE-GR-01b | Groups UI: transfer leadership, leave (3 variants, successor from `successorUserId`), LEADER removes member (TV1, `feature/fe-groups-manage` from develop 607725e) | IMPLEMENTED | Merged as 8ff7e67 (#66, 2026-11-29). Store writes unified in `runWrite`; ConfirmDialog, LeaveGroupDialog; GroupDialog focus fallback. Local: lint, format:check, build OK (bundle 524.81 kB, > 500 kB warning existed); check:api-client 34/34 incl. T15a–T15g; mutation (W2 counter bump removed) caught by T15a. Browser E2E steps 12–34 NOT_RUN (TV1/TV4) | TV1 E2E 12–34 |
+| SA-21/22 | FixedEvent WEEKLY expansion steps by week; skip DST-inverted occurrences (TV1) | IMPLEMENTED | PR #67 open @ c690eca, CI 4/4 pass, REVIEW_REQUIRED (checked 2026-11-29). Audit record: docs/security/AUDIT.md (on the PR branch) | Peer review or D12 waiver + TV1 ACCEPT |
 
 Status: TODO / IN_PROGRESS / IMPLEMENTED / VERIFIED / BLOCKED / DEFERRED.
 
@@ -70,10 +71,10 @@ Checked on the #50 sync tree (origin/develop 0df1ec9 merged into `fix/auth-jwt-h
 
 ## Next Task
 
-- ID: R-03 (AS-01/AS-02 task assignment backend), recommended 2026-11-29
-- Reason: last 501 module blocking SC-05b, FE-AS and the assign demo flow; gate 2026-11-30. In parallel: review #60/#62 (unblocks flows 2–3 in UI)
-- Acceptance criteria: assignment endpoints per OpenAPI (no 501), BR/D15 owner/leader checks, H2 + pgTest pass, CI 4/4, review + TV1 ACCEPT
-- Approval: APPROVED (TV1 2026-11-29, 3 open points as proposed); IMPLEMENTED, awaiting TV1 commit/PR
+- ID: AI-02 (R-06 AI task parsing), proposed 2026-11-29 by session closeout
+- Reason: last 501 module on develop; AI-01 is on `origin/feature/ai-client` 1349863 with no PR. In parallel: review/ACCEPT #67, review #60/#62 (unblocks flows 2–3 in UI) before gate 2026-11-30
+- Acceptance criteria: AI-01 PR opened; `AiController` no longer 501, FakeAiClient fallback (C-4), H2 + pgTest pass, CI 4/4, review + TV1 ACCEPT
+- Approval: NOT_APPROVED (proposal; R-03 done via #65)
 
 ### Previous next task
 
@@ -108,9 +109,9 @@ Checked on the #50 sync tree (origin/develop 0df1ec9 merged into `fix/auth-jwt-h
 ## Resume
 
 - Completed: GOV-01, GOV-02 (verified); GOV-03, GOV-04 (merged in fcf7919); GOV-05 (applied outside repo); API-01 merged (5d03acb, unreviewed, GOV-13); local `develop` synced
-- Pending: FE-AU commit/push/PR (TV1, D13) + TV1 UI checklist; GOV-14/15/16 §7.5 (Codex `git diff M S`); author fixes on #35/#36/#39; root-cause decision on the admin bypass; GOV-08 to GOV-13 Codex reviews + §7.5 records; A4/A5 reruns; token renewal before 2026-12-18
+- Pending: #67 review/ACCEPT; #60/#62 review; AI-01 PR; TV1 UI checklists (FE-AU, FE-GR E2E); GOV-14/15/16 §7.5 (Codex `git diff M S`); author fixes on #35/#36/#39; root-cause decision on the admin bypass; GOV-08 to GOV-13 Codex reviews + §7.5 records; A4/A5 reruns; token renewal before 2026-12-18
 - REV-49-51 (approved by TV1 2026-11-28): #49 reviewed (BLOCKED on R49-1 decision, no code bug), #50 reviewed (READY code; LOW/NIT only); #51 reviewed (READY, no findings). Claude review part done. Details: docs/reviews/PR_REVIEW.md
 - Codex recommendations (source: "khuyến nghị kỹ thuật của Codex tại SHA đã kiểm tra", forwarded by TV1) recorded in PR_REVIEW.md: #49 @ 85ecb02 REQUEST_CHANGES (history; recheck pending on the new head); #50 @ f222868 COMMENT; #51 @ 2887f76 no finding. Codex did not rerun Gradle/pgTest. This pass reviewed only the #49/#50/#51 diffs; GOV-08..13 unchanged. GitHub reviews on #49/#50/#51: 0; TV1 ACCEPT: none (checked 2026-11-28)
-- Next action: TV1 runs the FE-AU UI checklist, commits and pushes `feature/fe-auth`, opens the PR (this file carries the GOV-15/16 records); Codex reviews `git diff 1eff662 4b44492` (GOV-15) and Codex reviews `git diff a3e531f 1a91375` (GOV-16, M per TV1 choice (i)); peer review or D12 waiver + ACCEPT for FE-AU; TV1 pings Khoi12vn. Governance items after.
+- Next action: TV1 deletes merged local branches and remote `feature/group-contract-single-leader` (closeout 2026-11-29); review/ACCEPT #67; review #60/#62; open AI-01 PR (see Next Task). Codex reviews for GOV-15 (`git diff 1eff662 4b44492`) and GOV-16 (`git diff a3e531f 1a91375`) still pending. Governance items after.
 
 Update after each completed task. Revalidate stale information when relevant code changes. Never mark unverified work as VERIFIED. Avoid duplicate analysis.
