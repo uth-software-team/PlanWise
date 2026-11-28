@@ -834,10 +834,6 @@
               "$ref" : "#/components/schemas/MemberResponse"
             },
             "type" : "array"
-          },
-          "successorUserId" : {
-            "format" : "int64",
-            "type" : "integer"
           }
         },
         "type" : "object"
@@ -856,16 +852,6 @@
             "type" : "string"
           }
         },
-        "type" : "object"
-      },
-      "LeaderTransferRequest" : {
-        "properties" : {
-          "newLeaderUserId" : {
-            "format" : "int64",
-            "type" : "integer"
-          }
-        },
-        "required" : [ "newLeaderUserId" ],
         "type" : "object"
       },
       "LoginRequest" : {
@@ -2078,7 +2064,6 @@
     },
     "/v1/groups/{id}/members/{userId}" : {
       "delete" : {
-        "description" : "Removal (userId is not the caller): ACTIVE LEADER only; expectedSuccessorUserId must be absent (400 INVALID_INPUT); the LEADER cannot be removed (409 DATA_CONFLICT). Self-leave (userId = caller): a MEMBER sends no expectedSuccessorUserId; the LEADER must send the group's successorUserId and that member becomes LEADER; 409 DATA_CONFLICT when the group has no successor. 409 STALE_VERSION, with no change, when the caller's role or the successor no longer matches.",
         "operationId" : "removeMember",
         "parameters" : [ {
           "in" : "path",
@@ -2096,14 +2081,6 @@
             "format" : "int64",
             "type" : "integer"
           }
-        }, {
-          "in" : "query",
-          "name" : "expectedSuccessorUserId",
-          "required" : false,
-          "schema" : {
-            "format" : "int64",
-            "type" : "integer"
-          }
         } ],
         "responses" : {
           "204" : {
@@ -2113,7 +2090,6 @@
         "tags" : [ "group-controller" ]
       },
       "patch" : {
-        "description" : "ACTIVE LEADER only. Roles cannot be changed with this endpoint (D16): the target's current role returns 200 and changes nothing; any other role is 409 DATA_CONFLICT. Use POST /v1/groups/{id}/transfer-leadership to change the LEADER. 404 when the target is not an ACTIVE member.",
         "operationId" : "changeMemberRole",
         "parameters" : [ {
           "in" : "path",
@@ -2148,44 +2124,6 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ApiResponseMemberResponse"
-                }
-              }
-            },
-            "description" : "OK"
-          }
-        },
-        "tags" : [ "group-controller" ]
-      }
-    },
-    "/v1/groups/{id}/transfer-leadership" : {
-      "post" : {
-        "description" : "ACTIVE LEADER only. The caller becomes MEMBER and newLeaderUserId becomes LEADER in one transaction. 409 DATA_CONFLICT when newLeaderUserId is the caller; 404 when it is not an ACTIVE member or the account is inactive. Returns the updated group.",
-        "operationId" : "transferLeadership",
-        "parameters" : [ {
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "format" : "int64",
-            "type" : "integer"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/LeaderTransferRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseGroupResponse"
                 }
               }
             },

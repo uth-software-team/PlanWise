@@ -1,5 +1,6 @@
 package group16.webapp.modules.group.repository;
 
+import group16.webapp.modules.group.api.GroupRole;
 import group16.webapp.modules.group.api.MembershipStatus;
 import group16.webapp.modules.group.entity.GroupMember;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,9 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
 
     /** The membership row of a user in a group regardless of status (one row per group and user). */
     Optional<GroupMember> findByGroupIdAndUserId(Long groupId, Long userId);
+
+    /** Number of members with the given role and status (last-leader check). */
+    long countByGroupIdAndRoleAndStatus(Long groupId, GroupRole role, MembershipStatus status);
 
     /** All of one user's memberships with the given status ("my groups"). */
     List<GroupMember> findByUserIdAndStatus(Long userId, MembershipStatus status);
