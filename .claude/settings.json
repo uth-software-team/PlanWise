@@ -18,9 +18,13 @@
       "Bash(gh auth refresh)", "Bash(gh auth refresh *)", "Bash(gh auth switch)", "Bash(gh auth switch *)",
       "Bash(gh auth token)", "Bash(gh auth token *)", "Bash(gh auth setup-git)", "Bash(gh auth setup-git *)",
       "Bash(git push)", "Bash(git push *)", "Bash(git -C * push *)",
+      "Bash(git -C * push)",
       "Bash(git credential *)", "Bash(git config --global *)",
       "Bash(security *)",
-      "Read(./.claude/settings.local.json)"
+      "Read(./.claude/settings.local.json)",
+      "Artifact", "ArtifactData", "ArtifactComments",
+      "SendToProject", "SendToProjectContext", "RemoteTrigger",
+      "DesignSync", "PushNotification"
     ],
     "disableBypassPermissionsMode": "disable"
   }

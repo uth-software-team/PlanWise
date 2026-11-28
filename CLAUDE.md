@@ -122,3 +122,11 @@ You are a technical assistant, not the project owner. Don't make major architect
 - Require explicit approval before fixes.
 - Verify fixes and update audit state.
 - Minimize context and output tokens.
+
+## Project State
+
+- Use docs/PROJECT_STATE.md for development progress.
+- Update state after each verified task.
+- Reuse valid evidence; avoid duplicate analysis.
+- Recommend the next unblocked task.
+- Require approval before implementation.
