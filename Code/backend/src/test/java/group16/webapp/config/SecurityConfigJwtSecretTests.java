@@ -34,6 +34,23 @@ class SecurityConfigJwtSecretTests {
 	}
 
 	@Test
+	void rejectsEnvExamplePlaceholderSecret() {
+		// Value shipped in Code/backend/.env.example: long enough, but publicly known (SA-02).
+		String placeholder = "change-me-to-a-random-string-of-at-least-32-bytes";
+		assertThatThrownBy(() -> new SecurityConfig(placeholder, ORIGINS))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("placeholder")
+				.hasMessageNotContaining(placeholder);
+	}
+
+	@Test
+	void rejectsPlaceholderPrefixIgnoringCaseAndSurroundingSpace() {
+		assertThatThrownBy(() -> SecurityConfig.validateJwtSecret("  CHANGE-ME-" + "x".repeat(40)))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("placeholder");
+	}
+
+	@Test
 	void acceptsSecretOfExactly32Bytes() {
 		assertThat(SecurityConfig.validateJwtSecret("a".repeat(32))).hasSize(32);
 	}

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
+import group16.webapp.modules.auth.service.JwtService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -124,12 +125,40 @@ class SecurityConfigIntegrationTests {
 				.andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
 	}
 
+	@Test
+	void tokenFromAnotherIssuerReturns401() throws Exception {
+		Instant now = Instant.now();
+		String token = token("someone-else", now, now.plus(5, ChronoUnit.MINUTES));
+
+		mockMvc.perform(get(UNMAPPED_PROTECTED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+	}
+
+	@Test
+	void tokenWithoutIssuerReturns401() throws Exception {
+		Instant now = Instant.now();
+		String token = token(null, now, now.plus(5, ChronoUnit.MINUTES));
+
+		mockMvc.perform(get(UNMAPPED_PROTECTED_PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+	}
+
 	private String token(Instant issuedAt, Instant expiresAt) {
-		JwtClaimsSet claims = JwtClaimsSet.builder()
+		return token(JwtService.ISSUER, issuedAt, expiresAt);
+	}
+
+	/** {@code issuer == null} leaves the "iss" claim out. */
+	private String token(String issuer, Instant issuedAt, Instant expiresAt) {
+		JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
 				.subject("1")
 				.issuedAt(issuedAt)
-				.expiresAt(expiresAt)
-				.build();
+				.expiresAt(expiresAt);
+		if (issuer != null) {
+			builder.issuer(issuer);
+		}
+		JwtClaimsSet claims = builder.build();
 		JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
 		return jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
 	}
