@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, KeyRound, RefreshCw, Sparkles, AlertCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -155,6 +156,9 @@ export function SchedulePage() {
                 JWT Token
               </Button>
             )}
+            <Button asChild variant="outline" size="sm">
+              <Link to="/settings#availability">Thời gian rảnh &amp; Lịch cố định</Link>
+            </Button>
             <Button
               type="button"
               variant="outline"

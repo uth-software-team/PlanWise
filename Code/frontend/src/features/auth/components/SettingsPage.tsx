@@ -1,5 +1,6 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { LogOut } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -7,6 +8,7 @@ import { updateMe, type UserResponse } from '@/features/auth/api/authApi'
 import { FormAlert, FormField } from '@/features/auth/components/FormField'
 import { fieldErrorsOf, formErrorOf } from '@/features/auth/errors'
 import { reloadCurrentUser, setCurrentUser, signOut, useCurrentUser } from '@/features/auth/session'
+import { AvailabilitySettingsPanel } from '@/features/availability/components/AvailabilitySettingsPanel'
 import { getToken } from '@/lib/auth-token'
 import { cn } from '@/lib/utils'
 
@@ -25,9 +27,19 @@ function timezoneOptions(current: string): string[] {
   return zones.includes(current) || !current ? zones : [current, ...zones]
 }
 
-/** /settings. MVP scope (FE-AU): the profile only (name, time zone, planning window) and logout. */
+/** /settings. Profile (name, time zone, planning window), availability rules & fixed events, and logout. */
 export function SettingsPage() {
   const current = useCurrentUser()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.hash === '#availability' && current.status === 'ready') {
+      const target = document.getElementById('availability')
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+  }, [location.hash, current.status])
 
   return (
     <section aria-labelledby="page-title" className="mx-auto w-full max-w-3xl">
@@ -56,8 +68,11 @@ export function SettingsPage() {
           </div>
         )}
         {current.status === 'ready' && (
-          // A different account (e.g. after a login in another tab) gets a fresh form.
-          <ProfileForm key={current.user.id ?? current.user.email} user={current.user} />
+          <>
+            {/* A different account (e.g. after a login in another tab) gets a fresh form. */}
+            <ProfileForm key={current.user.id ?? current.user.email} user={current.user} />
+            <AvailabilitySettingsPanel key={`avail-${current.user.id ?? current.user.email}`} />
+          </>
         )}
       </div>
 
