@@ -70,6 +70,8 @@ public class TaskService implements TaskApi {
         Specification<TaskEntity> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("ownerUserId"), userId));
+            // D15: personal tasks only; group tasks are managed through the assignment module.
+            predicates.add(cb.isNull(root.get("groupId")));
             predicates.add(cb.isNull(root.get("deletedAt")));
 
             if (status != null) {
@@ -219,7 +221,7 @@ public class TaskService implements TaskApi {
     }
 
     private TaskEntity findOwnedActiveTask(Long userId, Long taskId) {
-        return taskRepository.findByIdAndOwnerUserIdAndDeletedAtIsNull(taskId, userId)
+        return taskRepository.findByIdAndOwnerUserIdAndGroupIdIsNullAndDeletedAtIsNull(taskId, userId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
     }
 

@@ -13,7 +13,8 @@ import java.util.Optional;
 
 public interface TaskRepository extends JpaRepository<TaskEntity, Long>, JpaSpecificationExecutor<TaskEntity> {
 
-    Optional<TaskEntity> findByIdAndOwnerUserIdAndDeletedAtIsNull(Long id, Long ownerUserId);
+    /** Personal task of the owner only (D15): group tasks are excluded even when the caller is their owner. */
+    Optional<TaskEntity> findByIdAndOwnerUserIdAndGroupIdIsNullAndDeletedAtIsNull(Long id, Long ownerUserId);
 
     Optional<TaskEntity> findByIdAndDeletedAtIsNull(Long id);
 
@@ -24,7 +25,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, Long>, JpaSpec
             WHERE t.deletedAt IS NULL
               AND t.status IN :statuses
               AND ((t.ownerUserId = :userId AND t.groupId IS NULL)
-                   OR t.id IN :acceptedGroupTaskIds)
+                   OR (t.id IN :acceptedGroupTaskIds AND t.groupId IS NOT NULL))
             """)
     List<TaskEntity> findSchedulableWithGroupTasks(
             @Param("userId") Long userId,

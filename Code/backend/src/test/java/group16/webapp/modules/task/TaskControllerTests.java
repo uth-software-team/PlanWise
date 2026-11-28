@@ -152,6 +152,21 @@ class TaskControllerTests extends AuthenticatedMvcTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
 
+        mockMvc.perform(MockMvcRequestBuilders.put("/v1/tasks/" + taskId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + otherToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "Hijacked",
+                                  "priority": "LOW",
+                                  "category": "OTHER",
+                                  "estimatedDurationMinutes": 10,
+                                  "version": 0
+                                }
+                                """))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
         mockMvc.perform(MockMvcRequestBuilders.delete("/v1/tasks/" + taskId)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + otherToken))
                 .andExpect(status().isNotFound());
@@ -203,16 +218,20 @@ class TaskControllerTests extends AuthenticatedMvcTest {
     }
 
     @Test
-    void taskApiSupportsSchedulableTasksGroupCreationAndSummaries() {
+    void taskApiSupportsSchedulableTasksGroupCreationAndSummaries() throws Exception {
         User owner = userRepository.findAll().getFirst();
         User assignee = userRepository.save(
                 new User("member-task@planwise.local", "$2a$10$hash", "Member", null));
+        long groupId = createGroupAsCaller();
 
-        Long groupTaskId = taskApi.createGroupTask(77L, owner.getId(),
+        Long groupTaskId = taskApi.createGroupTask(groupId, owner.getId(),
                 new NewGroupTaskCommand("Group Deliverable", "Module API",
                         Instant.parse("2026-12-10T12:00:00Z"), TaskPriority.URGENT, TaskCategory.PROJECT, 120));
 
-        assertThat(taskApi.findActiveGroupTaskGroupId(groupTaskId)).contains(77L);
+        assertThat(taskApi.findActiveGroupTaskGroupId(groupTaskId)).contains(groupId);
+        // Contract: empty for personal tasks.
+        long personalTaskId = createPersonalTaskAsCaller("Personal note");
+        assertThat(taskApi.findActiveGroupTaskGroupId(personalTaskId)).isEmpty();
         assertThat(taskApi.summaries(List.of(groupTaskId, 999999L)))
                 .hasSize(1)
                 .first()
@@ -225,5 +244,81 @@ class TaskControllerTests extends AuthenticatedMvcTest {
 
         List<SchedulableTask> assigneeTasks = taskApi.schedulableTasks(assignee.getId(), Set.of(groupTaskId));
         assertThat(assigneeTasks).extracting(SchedulableTask::taskId).containsExactly(groupTaskId);
+
+        // Only group tasks count as accepted ids: another user's personal task id passed in is never scheduled.
+        List<SchedulableTask> withForeignPersonalId =
+                taskApi.schedulableTasks(assignee.getId(), Set.of(groupTaskId, personalTaskId));
+        assertThat(withForeignPersonalId).extracting(SchedulableTask::taskId).containsExactly(groupTaskId);
+    }
+
+    @Test
+    void personalEndpointsExcludeGroupTasksOwnedByTheCaller() throws Exception {
+        // D15: the caller owns the group task (leader who created it), yet /v1/tasks must not expose it.
+        User caller = userRepository.findAll().getFirst();
+        long groupId = createGroupAsCaller();
+        Long groupTaskId = taskApi.createGroupTask(groupId, caller.getId(),
+                new NewGroupTaskCommand("Team deliverable", "Shared", null,
+                        TaskPriority.HIGH, TaskCategory.PROJECT, 60));
+        long personalTaskId = createPersonalTaskAsCaller("My own task");
+
+        callAuthenticated(HttpMethod.GET, "/v1/tasks", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(1)))
+                .andExpect(jsonPath("$.data.content[0].id").value(personalTaskId));
+        callAuthenticated(HttpMethod.GET, "/v1/tasks?priority=HIGH&status=TODO", null)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(0)));
+
+        String uri = "/v1/tasks/" + groupTaskId;
+        callAuthenticated(HttpMethod.GET, uri, null)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        callAuthenticated(HttpMethod.PUT, uri, """
+                {
+                  "title": "Renamed",
+                  "priority": "LOW",
+                  "category": "OTHER",
+                  "estimatedDurationMinutes": 10,
+                  "version": 0
+                }
+                """)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        callAuthenticated(HttpMethod.PATCH, uri + "/status", "{\"status\":\"COMPLETED\",\"version\":0}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        callAuthenticated(HttpMethod.DELETE, uri, null)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        // The group task is untouched by the rejected calls.
+        assertThat(taskApi.summaries(List.of(groupTaskId)))
+                .singleElement()
+                .extracting(s -> s.title(), s -> s.status())
+                .containsExactly("Team deliverable", TaskStatus.TODO);
+        assertThat(taskApi.findActiveGroupTaskGroupId(groupTaskId)).contains(groupId);
+    }
+
+    /** Creates a real group through the group API (caller becomes LEADER) instead of a made-up group id. */
+    private long createGroupAsCaller() throws Exception {
+        String body = callAuthenticated(HttpMethod.POST, "/v1/groups",
+                "{\"groupName\":\"Task test group\",\"description\":\"\"}")
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.data.id")).longValue();
+    }
+
+    private long createPersonalTaskAsCaller(String title) throws Exception {
+        String body = callAuthenticated(HttpMethod.POST, "/v1/tasks", """
+                {
+                  "title": "%s",
+                  "priority": "MEDIUM",
+                  "category": "PERSONAL",
+                  "estimatedDurationMinutes": 30
+                }
+                """.formatted(title))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.data.id")).longValue();
     }
 }
