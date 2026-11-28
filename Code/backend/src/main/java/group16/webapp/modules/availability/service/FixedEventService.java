@@ -277,13 +277,16 @@ public class FixedEventService {
             return List.of();
         }
 
+        // SA-21: jump to the first matching weekday, then step one week at a time.
+        LocalDate firstMatch = firstDate.plusDays(Math.floorMod(targetDow - firstDate.getDayOfWeek().getValue(), 7));
         List<TimeRange> results = new ArrayList<>();
-        for (LocalDate date = firstDate; !date.isAfter(lastDate); date = date.plusDays(1)) {
-            if (date.getDayOfWeek().getValue() != targetDow) {
-                continue;
-            }
+        for (LocalDate date = firstMatch; !date.isAfter(lastDate); date = date.plusWeeks(1)) {
             Instant occStart = ZonedDateTime.of(date, event.getStartTime(), userZone).toInstant();
             Instant occEnd = ZonedDateTime.of(date, event.getEndTime(), userZone).toInstant();
+            // SA-22: a startTime inside a DST gap moves forward and can pass endTime; skip that occurrence.
+            if (!occStart.isBefore(occEnd)) {
+                continue;
+            }
             if (occStart.isBefore(windowEnd) && occEnd.isAfter(windowStart)) {
                 results.add(new TimeRange(occStart, occEnd));
             }

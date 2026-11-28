@@ -4,6 +4,7 @@ import group16.webapp.modules.auth.api.UserApi;
 import group16.webapp.modules.auth.api.UserSummary;
 import group16.webapp.modules.availability.api.RecurrenceType;
 import group16.webapp.modules.availability.api.TimeRange;
+import group16.webapp.modules.availability.dto.CalendarResponse.CalendarFixedEvent;
 import group16.webapp.modules.availability.dto.FixedEventRequest;
 import group16.webapp.modules.availability.dto.FixedEventResponse;
 import group16.webapp.modules.availability.entity.FixedEventEntity;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -103,6 +105,34 @@ class FixedEventServiceTests {
                 range("2026-10-26T13:00:00Z", "2026-10-26T14:00:00Z"),
                 range("2026-11-02T14:00:00Z", "2026-11-02T15:00:00Z"),
                 range("2026-11-09T14:00:00Z", "2026-11-09T15:00:00Z"));
+    }
+
+    @Test
+    void weeklyEventStartsAtFirstMatchingWeekdayWhenWindowAndEffectiveFromAreMidWeek() {
+        stubZone("Asia/Ho_Chi_Minh");
+        // Monday event, effective from Tue 2026-12-01; window Wed 2026-11-25 .. Wed 2026-12-16 (+07).
+        when(fixedEventRepository.findByUserId(USER_ID)).thenReturn(List.of(
+                weekly(1, "09:00", "10:00", LocalDate.parse("2026-12-01"), null)));
+
+        List<TimeRange> occurrences = fixedEventService.expandMergedOccurrences(USER_ID,
+                Instant.parse("2026-11-24T17:00:00Z"), Instant.parse("2026-12-15T17:00:00Z"));
+
+        assertThat(occurrences).containsExactly(
+                range("2026-12-07T02:00:00Z", "2026-12-07T03:00:00Z"),
+                range("2026-12-14T02:00:00Z", "2026-12-14T03:00:00Z"));
+    }
+
+    @Test
+    void weeklyCalendarSkipsOccurrenceInvertedByDstGap() {
+        // US DST starts Sun 2027-03-14: 02:30 does not exist and becomes 03:30 EDT, after the 03:15 end.
+        when(fixedEventRepository.findByUserId(USER_ID)).thenReturn(List.of(weekly(7, "02:30", "03:15", null, null)));
+
+        List<CalendarFixedEvent> occurrences = fixedEventService.expandCalendarOccurrences(USER_ID,
+                Instant.parse("2027-03-13T05:00:00Z"), Instant.parse("2027-03-23T04:00:00Z"),
+                ZoneId.of("America/New_York"));
+
+        assertThat(occurrences).extracting(CalendarFixedEvent::startAt, CalendarFixedEvent::endAt)
+                .containsExactly(tuple(Instant.parse("2027-03-21T06:30:00Z"), Instant.parse("2027-03-21T07:15:00Z")));
     }
 
     @Test
