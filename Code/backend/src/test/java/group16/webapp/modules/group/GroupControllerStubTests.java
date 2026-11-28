@@ -37,8 +37,7 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 		return Stream.of(
 				Arguments.of(HttpMethod.POST, "/v1/groups/1/members", "{\"email\":\"member@example.com\"}"),
 				Arguments.of(HttpMethod.PATCH, "/v1/groups/1/members/2", "{\"role\":\"LEADER\"}"),
-				Arguments.of(HttpMethod.DELETE, "/v1/groups/1/members/2", null),
-				Arguments.of(HttpMethod.POST, "/v1/groups/1/transfer-leadership", "{\"newLeaderUserId\":2}"));
+				Arguments.of(HttpMethod.DELETE, "/v1/groups/1/members/2", null));
 	}
 
 	/** Availability endpoint implemented in GR-04 (behavior covered by GroupAvailabilityControllerTests). */
@@ -69,9 +68,6 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 				Arguments.of(HttpMethod.POST, "/v1/groups/1/members", "{\"email\":\"not-an-email\"}"),
 				Arguments.of(HttpMethod.PATCH, "/v1/groups/1/members/2", "{\"role\":\"OWNER\"}"),
 				Arguments.of(HttpMethod.PATCH, "/v1/groups/1/members/2", "{}"),
-				Arguments.of(HttpMethod.POST, "/v1/groups/1/transfer-leadership", "{}"),
-				Arguments.of(HttpMethod.POST, "/v1/groups/1/transfer-leadership", "{\"newLeaderUserId\":\"x\"}"),
-				Arguments.of(HttpMethod.DELETE, "/v1/groups/1/members/2?expectedSuccessorUserId=abc", null),
 				Arguments.of(HttpMethod.GET, "/v1/groups/1/availability?start=2026-11-23T00:00:00Z", null),
 				Arguments.of(HttpMethod.GET, "/v1/groups/1/availability?start=yesterday&end=2026-11-30T00:00:00Z",
 						null));
@@ -106,13 +102,6 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 				.andExpect(jsonPath("$.paths['/v1/groups/{id}/members/{userId}'].delete.responses['204']").exists())
 				.andExpect(jsonPath("$.paths['/v1/groups/{id}/members/{userId}'].delete.responses['204'].content")
 						.doesNotExist())
-				.andExpect(jsonPath("$.paths['/v1/groups/{id}/members/{userId}'].delete.parameters"
-						+ "[?(@.name=='expectedSuccessorUserId')].required").value(contains(false)))
-				.andExpect(jsonPath(
-						"$.paths['/v1/groups/{id}/transfer-leadership'].post.responses['200'].content['*/*'].schema['$ref']")
-						.value("#/components/schemas/ApiResponseGroupResponse"))
-				.andExpect(jsonPath("$.paths['/v1/groups/{id}/transfer-leadership'].post.requestBody.required")
-						.value(true))
 				.andExpect(jsonPath(
 						"$.paths['/v1/groups/{id}/availability'].get.responses['200'].content['*/*'].schema['$ref']")
 						.value("#/components/schemas/ApiResponseGroupAvailabilityResponse"))
@@ -131,9 +120,6 @@ class GroupControllerStubTests extends AuthenticatedMvcTest {
 						.value(contains("ACTIVE", "INACTIVE")))
 				.andExpect(jsonPath("$.components.schemas.RoleUpdateRequest.properties.role.enum")
 						.value(contains("LEADER", "MEMBER")))
-				.andExpect(jsonPath("$.components.schemas.GroupResponse.properties.successorUserId.type").value("integer"))
-				.andExpect(jsonPath("$.components.schemas.LeaderTransferRequest.required")
-						.value(contains("newLeaderUserId")))
 				.andExpect(jsonPath("$.components.schemas.GroupSummaryResponse.properties.myRole.enum")
 						.value(contains("LEADER", "MEMBER")))
 				.andExpect(jsonPath("$.components.schemas.MemberBusy.properties.*").value(hasSize(2)))

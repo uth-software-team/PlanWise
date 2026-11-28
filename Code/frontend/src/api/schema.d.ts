@@ -287,29 +287,10 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Removal (userId is not the caller): ACTIVE LEADER only; expectedSuccessorUserId must be absent (400 INVALID_INPUT); the LEADER cannot be removed (409 DATA_CONFLICT). Self-leave (userId = caller): a MEMBER sends no expectedSuccessorUserId; the LEADER must send the group's successorUserId and that member becomes LEADER; 409 DATA_CONFLICT when the group has no successor. 409 STALE_VERSION, with no change, when the caller's role or the successor no longer matches. */
         delete: operations["removeMember"];
         options?: never;
         head?: never;
-        /** @description ACTIVE LEADER only. Roles cannot be changed with this endpoint (D16): the target's current role returns 200 and changes nothing; any other role is 409 DATA_CONFLICT. Use POST /v1/groups/{id}/transfer-leadership to change the LEADER. 404 when the target is not an ACTIVE member. */
         patch: operations["changeMemberRole"];
-        trace?: never;
-    };
-    "/v1/groups/{id}/transfer-leadership": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** @description ACTIVE LEADER only. The caller becomes MEMBER and newLeaderUserId becomes LEADER in one transaction. 409 DATA_CONFLICT when newLeaderUserId is the caller; 404 when it is not an ACTIVE member or the account is inactive. Returns the updated group. */
-        post: operations["transferLeadership"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/v1/schedules/generate": {
@@ -767,8 +748,6 @@ export interface components {
             /** Format: int64 */
             id?: number;
             members?: components["schemas"]["MemberResponse"][];
-            /** Format: int64 */
-            successorUserId?: number;
         };
         GroupSummaryResponse: {
             groupName?: string;
@@ -776,10 +755,6 @@ export interface components {
             id?: number;
             /** @enum {string} */
             myRole?: "LEADER" | "MEMBER";
-        };
-        LeaderTransferRequest: {
-            /** Format: int64 */
-            newLeaderUserId: number;
         };
         LoginRequest: {
             email: string;
@@ -1553,9 +1528,7 @@ export interface operations {
     };
     removeMember: {
         parameters: {
-            query?: {
-                expectedSuccessorUserId?: number;
-            };
+            query?: never;
             header?: never;
             path: {
                 id: number;
@@ -1597,32 +1570,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ApiResponseMemberResponse"];
-                };
-            };
-        };
-    };
-    transferLeadership: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LeaderTransferRequest"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["ApiResponseGroupResponse"];
                 };
             };
         };

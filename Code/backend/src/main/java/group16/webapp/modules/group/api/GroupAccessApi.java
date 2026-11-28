@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Public contract of the group module for other modules (assignment, GR-04 group availability).
- * Roles are checked per group (team decisions D8, D16). Implemented in GR-03.
+ * Roles are checked per group (team decision D8). Implemented in GR-03.
  */
 public interface GroupAccessApi {
 
@@ -17,12 +17,7 @@ public interface GroupAccessApi {
     void requireMember(Long groupId, Long userId);
 
     /**
-     * Requires {@code userId} to be an ACTIVE LEADER of {@code groupId}. Check it on every request; never infer the
-     * right from stored data such as {@code task_assignments.assigned_by_user_id} (after a transfer the former
-     * LEADER is a MEMBER).
-     *
-     * <p>Accepted race (O12a, TV1 2026-11-29): this check does not lock the group, so a leadership transfer that
-     * commits between this check and the caller's own write lets the former LEADER complete that one write.
+     * Requires {@code userId} to be an ACTIVE LEADER of {@code groupId}.
      *
      * @throws group16.webapp.common.exception.AppException RESOURCE_NOT_FOUND if the group does not exist,
      *                                                      FORBIDDEN if the user is not an ACTIVE LEADER
