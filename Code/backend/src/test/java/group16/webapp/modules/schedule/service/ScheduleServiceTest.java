@@ -30,6 +30,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -87,6 +88,29 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void generateProposal_rejectsWindowLongerThan366DaysBeforeRuleCheckOrProposalReplacement() {
+        Instant start = Instant.parse("2026-11-23T00:00:00Z");
+        Instant end = start.plus(Duration.ofDays(366)).plusSeconds(1);
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.generateProposal(1L, new GenerateScheduleRequest(start, end, null)));
+        assertEquals(ErrorCode.INVALID_TIME_RANGE, ex.getErrorCode());
+        verifyNoInteractions(availabilityProvider, availabilityApi, proposalRepository, sessionRepository);
+    }
+
+    @Test
+    void generateProposal_acceptsWindowOfExactly366DaysAndReachesRuleCheck() {
+        Instant start = Instant.parse("2026-11-23T00:00:00Z");
+        Instant end = start.plus(Duration.ofDays(366));
+        when(availabilityApi.hasActiveRule(1L)).thenReturn(false);
+
+        AppException ex = assertThrows(AppException.class,
+                () -> service.generateProposal(1L, new GenerateScheduleRequest(start, end, null)));
+        assertEquals(ErrorCode.NO_AVAILABILITY_RULE, ex.getErrorCode());
+        verifyNoInteractions(proposalRepository, sessionRepository);
+    }
+
+    @Test
     void editSession_throwsStaleVersionWhenBatchVersionMismatches() {
         ScheduleSession session = new ScheduleSession();
         org.springframework.test.util.ReflectionTestUtils.setField(session, "id", 200L); session.setProposalId(100L);
@@ -107,6 +131,64 @@ class ScheduleServiceTest {
         AppException ex = assertThrows(AppException.class,
                 () -> service.editSession(1L, 50L, new SessionEditRequest(s, e, 2)));
         assertEquals(ErrorCode.STALE_VERSION, ex.getErrorCode());
+    }
+
+    @Test
+    void editSession_rejectsEditThatStretchesBatchBeyond366DaysWithoutExpandingAvailability() {
+        // 01:00Z = 08:00 in the default zone (Asia/Ho_Chi_Minh), so every session stays inside one local day (HC-04).
+        Instant siblingStart = Instant.now().plus(30, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS);
+        Instant editedEnd = siblingStart.plus(Duration.ofDays(366)).plusSeconds(1);
+        stubEditableBatch(siblingStart);
+
+        AppException ex = assertThrows(AppException.class, () -> service.editSession(1L, 50L,
+                new SessionEditRequest(editedEnd.minus(1, ChronoUnit.HOURS), editedEnd, 1)));
+        assertEquals(ErrorCode.INVALID_TIME_RANGE, ex.getErrorCode());
+        verifyNoInteractions(availabilityProvider, availabilityApi, taskApi);
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void editSession_acceptsBatchSpanOfExactly366DaysAndRunsHardConstraintChecks() {
+        Instant siblingStart = Instant.now().plus(30, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS);
+        Instant editedEnd = siblingStart.plus(Duration.ofDays(366));
+        stubEditableBatch(siblingStart);
+
+        // No availability is stubbed, so the edited session fails HC checks: proves the span cap let it through.
+        AppException ex = assertThrows(AppException.class, () -> service.editSession(1L, 50L,
+                new SessionEditRequest(editedEnd.minus(1, ChronoUnit.HOURS), editedEnd, 1)));
+        assertEquals(ErrorCode.CONSTRAINT_VIOLATION, ex.getErrorCode());
+        verify(availabilityApi).availableIntervals(1L, siblingStart, editedEnd);
+    }
+
+    /** Batch 100 (version 1) with editable session 50 and one sibling (51) starting at {@code siblingStart}. */
+    private void stubEditableBatch(Instant siblingStart) {
+        ScheduleProposal proposal = new ScheduleProposal();
+        org.springframework.test.util.ReflectionTestUtils.setField(proposal, "id", 100L);
+        proposal.setUserId(1L);
+        proposal.setStatus(ProposalStatus.PROPOSED);
+        proposal.setVersion(1);
+
+        ScheduleSession edited = new ScheduleSession();
+        org.springframework.test.util.ReflectionTestUtils.setField(edited, "id", 50L);
+        edited.setProposalId(100L);
+        edited.setTaskId(10L);
+        edited.setUserId(1L);
+        edited.setStartAt(siblingStart.plus(1, ChronoUnit.DAYS));
+        edited.setEndAt(siblingStart.plus(1, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS));
+        edited.setStatus(SessionStatus.PROPOSED);
+
+        ScheduleSession sibling = new ScheduleSession();
+        org.springframework.test.util.ReflectionTestUtils.setField(sibling, "id", 51L);
+        sibling.setProposalId(100L);
+        sibling.setTaskId(11L);
+        sibling.setUserId(1L);
+        sibling.setStartAt(siblingStart);
+        sibling.setEndAt(siblingStart.plus(1, ChronoUnit.HOURS));
+        sibling.setStatus(SessionStatus.PROPOSED);
+
+        when(sessionRepository.findByIdAndUserId(50L, 1L)).thenReturn(Optional.of(edited));
+        when(proposalRepository.findByIdAndUserId(100L, 1L)).thenReturn(Optional.of(proposal));
+        when(sessionRepository.findByProposalIdOrderByStartAtAsc(100L)).thenReturn(List.of(sibling, edited));
     }
 
     @Test

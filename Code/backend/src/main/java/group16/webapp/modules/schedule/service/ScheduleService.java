@@ -78,7 +78,8 @@ public class ScheduleService implements ScheduleApi {
 
     @Transactional
     public ProposalBatchResponse generateProposal(Long userId, GenerateScheduleRequest request) {
-        if (!request.windowStart().isBefore(request.windowEnd())) {
+        if (!request.windowStart().isBefore(request.windowEnd())
+                || DateUtils.exceedsMaxQueryRange(request.windowStart(), request.windowEnd())) {
             throw new AppException(ErrorCode.INVALID_TIME_RANGE);
         }
         AvailabilityApi availabilityApi = availabilityApiProvider.getIfAvailable();
@@ -228,6 +229,14 @@ public class ScheduleService implements ScheduleApi {
         session.setStartAt(request.startAt());
         session.setEndAt(request.endAt());
         validationOrder.add(session);
+
+        // D14: the batch span after the edit bounds the availability expansion below (and at confirm).
+        Instant batchStart = validationOrder.stream().map(ScheduleSession::getStartAt).min(Instant::compareTo).orElseThrow();
+        Instant batchEnd = validationOrder.stream().map(ScheduleSession::getEndAt).max(Instant::compareTo).orElseThrow();
+        if (DateUtils.exceedsMaxQueryRange(batchStart, batchEnd)) {
+            // Thrown inside the transaction: the version bump and the new times are rolled back.
+            throw new AppException(ErrorCode.INVALID_TIME_RANGE);
+        }
 
         List<ConflictErrorDto> conflicts = checkHardConstraints(userId, validationOrder, Instant.now()).conflicts().stream()
                 .filter(c -> Objects.equals(c.sessionId(), session.getId()))

@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +42,8 @@ class GroupAvailabilityServiceImplTest {
 	private static final Long GROUP = 10L;
 	private static final Instant START = Instant.parse("2026-11-23T00:00:00Z");
 	private static final Instant END = Instant.parse("2026-11-30T00:00:00Z");
+	private static final Instant EXACTLY_MAX = START.plus(Duration.ofDays(366));
+	private static final Instant OVER_MAX = EXACTLY_MAX.plusSeconds(1);
 
 	@Mock
 	private UserApi userApi;
@@ -89,6 +92,33 @@ class GroupAvailabilityServiceImplTest {
 		assertError(() -> service.getAvailability(CALLER, GROUP, START, START), ErrorCode.INVALID_TIME_RANGE);
 		assertError(() -> service.getAvailability(CALLER, GROUP, END, START), ErrorCode.INVALID_TIME_RANGE);
 		verifyNoInteractions(groupAccessApi, calendarApiProvider);
+	}
+
+	@Test
+	void inactiveCallerWithOverlongRangeStillGets401() {
+		when(userApi.findById(CALLER)).thenReturn(Optional.of(new UserSummary(CALLER, "c@example.com", "C", null,
+				false)));
+
+		assertError(() -> service.getAvailability(CALLER, GROUP, START, OVER_MAX), ErrorCode.UNAUTHENTICATED);
+		verifyNoInteractions(groupAccessApi, calendarApiProvider);
+	}
+
+	@Test
+	void rangeLongerThan366DaysIsRejectedBeforeGroupAccess() {
+		activeCaller();
+
+		assertError(() -> service.getAvailability(CALLER, GROUP, START, OVER_MAX), ErrorCode.INVALID_TIME_RANGE);
+		verifyNoInteractions(groupAccessApi, calendarApiProvider);
+	}
+
+	@Test
+	void exactly366DaysPassesTheRangeCheck() {
+		activeCaller();
+		when(calendarApiProvider.getIfAvailable()).thenReturn(null);
+
+		// Reaches the membership check and then the provider lookup (501 here), so the range was accepted.
+		assertError(() -> service.getAvailability(CALLER, GROUP, START, EXACTLY_MAX), ErrorCode.NOT_IMPLEMENTED);
+		verify(groupAccessApi).requireMember(GROUP, CALLER);
 	}
 
 	@Test

@@ -251,6 +251,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Half-open window [start, end). Requires start < end and end - start <= 366 days; otherwise 400 INVALID_TIME_RANGE. */
         get: operations["getAvailability"];
         put?: never;
         post?: never;
@@ -301,6 +302,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Half-open window [windowStart, windowEnd). Requires windowStart < windowEnd and windowEnd - windowStart <= 366 days; otherwise 400 INVALID_TIME_RANGE. */
         post: operations["generate"];
         delete?: never;
         options?: never;

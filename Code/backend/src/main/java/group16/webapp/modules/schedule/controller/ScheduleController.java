@@ -9,6 +9,7 @@ import group16.webapp.modules.schedule.dto.GenerateScheduleRequest;
 import group16.webapp.modules.schedule.dto.ProposalBatchResponse;
 import group16.webapp.modules.schedule.dto.SessionEditRequest;
 import group16.webapp.modules.schedule.service.ScheduleService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -42,8 +43,11 @@ public class ScheduleController {
 
     /**
      * Creates the caller's new PROPOSED batch (replacing any previous PROPOSED batch) and returns it with the
-     * unscheduled tasks. 200 even when {@code unscheduledTasks} is not empty; 400 NO_AVAILABILITY_RULE without rules.
+     * unscheduled tasks. 200 even when {@code unscheduledTasks} is not empty; 400 NO_AVAILABILITY_RULE without rules;
+     * 400 INVALID_TIME_RANGE for an empty, reversed or longer than 366 days window (checked first).
      */
+    @Operation(description = "Half-open window [windowStart, windowEnd). Requires windowStart < windowEnd and "
+            + "windowEnd - windowStart <= 366 days; otherwise 400 INVALID_TIME_RANGE.")
     @PostMapping("/generate")
     public ApiResponse<ProposalBatchResponse> generate(@Valid @RequestBody GenerateScheduleRequest request) {
         requireOrderedRange(request.windowStart(), request.windowEnd());

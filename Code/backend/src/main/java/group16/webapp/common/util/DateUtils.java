@@ -1,6 +1,7 @@
 package group16.webapp.common.util;
 
 import java.time.DateTimeException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -15,7 +16,22 @@ public final class DateUtils {
     /** Default for new users when no timezone is supplied (matches the users.timezone DB default). */
     public static final String DEFAULT_TIMEZONE = "Asia/Ho_Chi_Minh";
 
+    /**
+     * Longest query window accepted by calendar, group availability and schedule generate, and longest batch span
+     * after a session edit (TV1, 2026-11-28, D14).
+     * Exactly 366 days is allowed; anything longer is 400 INVALID_TIME_RANGE.
+     */
+    public static final Duration MAX_QUERY_RANGE = Duration.ofDays(366);
+
     private DateUtils() {}
+
+    /**
+     * True when {@code end - start} is longer than {@link #MAX_QUERY_RANGE}, compared at full Instant
+     * precision (one nanosecond over is too long). Callers check {@code start < end} first.
+     */
+    public static boolean exceedsMaxQueryRange(Instant start, Instant end) {
+        return Duration.between(start, end).compareTo(MAX_QUERY_RANGE) > 0;
+    }
 
     /** True for a valid IANA region id such as "Asia/Ho_Chi_Minh" or "Europe/Paris". */
     public static boolean isValidTimezone(String timezone) {

@@ -37,6 +37,8 @@ Never run migrations or data-changing commands without approval.
 - D9 Audit columns only where the ERD has them; no `created_by`/`updated_by`.
 - D10 Tests: H2 `create-drop`, Flyway disabled. Migrations are PostgreSQL-only and are verified by Testcontainers `@Tag("pg")` tests (`./gradlew pgTest`, approved as G3, added by F-03).
 - D11 No refresh token in MVP (access JWT only).
+- D14 Query windows of `GET /v1/calendar` (effective with #39), `GET /v1/groups/{id}/availability` and `POST /v1/schedules/generate` are valid only when `start < end` and `end - start <= 366 days` (`DateUtils.MAX_QUERY_RANGE`, full Instant precision); otherwise 400 `INVALID_TIME_RANGE`. An edit session (`PUT /v1/schedules/sessions/{id}`) is 400 `INVALID_TIME_RANGE` when the batch span after the edit (earliest session start to latest session end, edited session included) exceeds 366 days. (TV1, 2026-11-28)
+- D15 Personal task endpoints (`/v1/tasks`) cover personal tasks only (`group_id IS NULL`); group tasks are excluded even when `owner_user_id` is the caller, and a group task id there is 404. (effective with #35) (TV1, 2026-11-28)
 
 ## Architecture
 Modular Monolith + Layered: Controller -> Service -> Repository -> PostgreSQL.

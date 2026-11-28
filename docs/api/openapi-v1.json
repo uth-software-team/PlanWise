@@ -1983,6 +1983,7 @@
     },
     "/v1/groups/{id}/availability" : {
       "get" : {
+        "description" : "Half-open window [start, end). Requires start < end and end - start <= 366 days; otherwise 400 INVALID_TIME_RANGE.",
         "operationId" : "getAvailability",
         "parameters" : [ {
           "in" : "path",
@@ -2134,6 +2135,7 @@
     },
     "/v1/schedules/generate" : {
       "post" : {
+        "description" : "Half-open window [windowStart, windowEnd). Requires windowStart < windowEnd and windowEnd - windowStart <= 366 days; otherwise 400 INVALID_TIME_RANGE.",
         "operationId" : "generate",
         "requestBody" : {
           "content" : {
