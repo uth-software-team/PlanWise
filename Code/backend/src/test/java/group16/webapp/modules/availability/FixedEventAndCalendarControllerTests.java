@@ -84,6 +84,11 @@ class FixedEventAndCalendarControllerTests extends AuthenticatedMvcTest {
                 public Optional<Long> findActiveGroupTaskGroupId(Long taskId) {
                     return Optional.empty();
                 }
+
+                @Override
+                public List<Long> groupTaskIds(Long groupId) {
+                    return List.of();
+                }
             };
         }
     }

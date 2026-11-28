@@ -103,6 +103,7 @@ class ScheduleServiceIntegrationTests {
         }
 
         @Bean
+        @Primary
         AssignmentApi assignmentApi() {
             return userId -> Set.of();
         }
@@ -125,6 +126,7 @@ class ScheduleServiceIntegrationTests {
                             .toList();
                 }
                 public Optional<Long> findActiveGroupTaskGroupId(Long taskId) { return Optional.empty(); }
+                public List<Long> groupTaskIds(Long groupId) { return List.of(); }
             };
         }
     }

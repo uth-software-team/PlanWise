@@ -24,4 +24,7 @@ public interface TaskApi {
 
     /** Group of a non-deleted group task; empty for personal, deleted or missing tasks (AS-01 reassignment). */
     Optional<Long> findActiveGroupTaskGroupId(Long taskId);
+
+    /** Ids of the non-deleted tasks of a group, any status (assignment list by group). Empty for an unknown group. */
+    List<Long> groupTaskIds(Long groupId);
 }

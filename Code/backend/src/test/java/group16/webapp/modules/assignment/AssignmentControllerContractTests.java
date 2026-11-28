@@ -19,8 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-/** GR-01 contract: assignment stubs answer 501, validate their input and are documented in OpenAPI. */
-class AssignmentControllerStubTests extends AuthenticatedMvcTest {
+/** GR-01 contract: assignment endpoints need a token, validate their input and are documented in OpenAPI. */
+class AssignmentControllerContractTests extends AuthenticatedMvcTest {
 
 	private static final String NEW_TASK = "{\"groupId\":1,\"title\":\"Write report\",\"description\":\"\","
 			+ "\"deadline\":\"2026-11-30T11:00:00Z\",\"priority\":\"HIGH\",\"category\":\"PROJECT\","
@@ -35,15 +35,6 @@ class AssignmentControllerStubTests extends AuthenticatedMvcTest {
 				Arguments.of(HttpMethod.POST, "/v1/assignments/1/accept", null),
 				Arguments.of(HttpMethod.POST, "/v1/assignments/1/decline", "{\"reason\":\"Busy this week\"}"),
 				Arguments.of(HttpMethod.POST, "/v1/assignments/1/revoke", null));
-	}
-
-	@ParameterizedTest(name = "{0} {1} {2}")
-	@MethodSource("endpoints")
-	void authenticatedValidCallReturns501(HttpMethod method, String uri, String body) throws Exception {
-		callAuthenticated(method, uri, body)
-				.andExpect(status().isNotImplemented())
-				.andExpect(jsonPath("$.success").value(false))
-				.andExpect(jsonPath("$.code").value("NOT_IMPLEMENTED"));
 	}
 
 	@ParameterizedTest(name = "{0} {1} {2}")

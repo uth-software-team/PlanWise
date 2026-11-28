@@ -220,6 +220,15 @@ public class TaskService implements TaskApi {
                 .map(TaskEntity::getGroupId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<Long> groupTaskIds(Long groupId) {
+        if (groupId == null) {
+            return List.of();
+        }
+        return taskRepository.findActiveIdsByGroupId(groupId);
+    }
+
     private TaskEntity findOwnedActiveTask(Long userId, Long taskId) {
         return taskRepository.findByIdAndOwnerUserIdAndGroupIdIsNullAndDeletedAtIsNull(taskId, userId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
