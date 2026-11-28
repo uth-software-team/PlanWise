@@ -8,6 +8,7 @@ import { LoginPage } from '@/features/auth/components/LoginPage'
 import { RegisterPage } from '@/features/auth/components/RegisterPage'
 import { SettingsPage } from '@/features/auth/components/SettingsPage'
 import { SchedulePage } from '@/features/schedule/components/SchedulePage'
+import { TasksPage } from '@/features/tasks/components/TasksPage'
 import { NotFoundPage } from '@/routes/NotFoundPage'
 import { PlaceholderPage } from '@/routes/PlaceholderPage'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
@@ -15,6 +16,7 @@ import { PublicOnlyRoute } from '@/routes/PublicOnlyRoute'
 
 /** Feature pages that replace a placeholder; paths stay those of APP_PAGES (FE-01 rule). */
 const FEATURE_PAGES: Partial<Record<string, ReactNode>> = {
+  '/tasks': <TasksPage />,
   '/schedule': <SchedulePage />,
   '/settings': <SettingsPage />,
 }
