@@ -211,7 +211,10 @@ public class ScheduleService implements ScheduleApi {
             throw new AppException(ErrorCode.DATA_CONFLICT, "Only PROPOSED sessions can be edited");
         }
 
-        ScheduleProposal proposal = proposalRepository.findByIdAndUserId(session.getProposalId(), userId)
+        // SA-20: lock the batch row before any session row is written, in the same order as confirm
+        // (proposal, then sessions); otherwise edit and confirm deadlock. A change committed while waiting
+        // shows up below as a non-PROPOSED status or a new version (409).
+        ScheduleProposal proposal = proposalRepository.findByIdAndUserIdForUpdate(session.getProposalId(), userId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (proposal.getStatus() != ProposalStatus.PROPOSED) {
@@ -267,7 +270,8 @@ public class ScheduleService implements ScheduleApi {
             throw new AppException(ErrorCode.DATA_CONFLICT, "Only PROPOSED sessions can be deleted");
         }
 
-        ScheduleProposal proposal = proposalRepository.findByIdAndUserId(session.getProposalId(), userId)
+        // SA-20: same lock order as confirm and edit (proposal row first).
+        ScheduleProposal proposal = proposalRepository.findByIdAndUserIdForUpdate(session.getProposalId(), userId)
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
 
         if (proposal.getStatus() != ProposalStatus.PROPOSED) {
@@ -427,8 +431,13 @@ public class ScheduleService implements ScheduleApi {
     }
 
     private Map<Long, Integer> computeRemainingMinutes(Long userId, List<SchedulableTask> tasks) {
+        if (tasks.isEmpty()) {
+            return new HashMap<>();
+        }
+        // SA-15: only the committed sessions of these tasks, not the user's whole history.
+        Set<Long> taskIds = tasks.stream().map(SchedulableTask::taskId).collect(Collectors.toSet());
         Map<Long, Integer> committedMinutesByTask = new HashMap<>();
-        for (ScheduleSession s : sessionRepository.findByUserIdAndStatusIn(userId, COMMITTED_STATUSES)) {
+        for (ScheduleSession s : sessionRepository.findByUserIdAndTaskIdInAndStatusIn(userId, taskIds, COMMITTED_STATUSES)) {
             int mins = SlotCalculator.minutesBetween(s.getStartAt(), s.getEndAt());
             committedMinutesByTask.merge(s.getTaskId(), mins, Integer::sum);
         }

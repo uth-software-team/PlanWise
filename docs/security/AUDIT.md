@@ -10,8 +10,8 @@ Persistent audit state. Follow CHECKLIST.md. Update after each completed module.
 - Branch: audit on `feature/common-contract-max-query-range` (8e7db4b); fixes on `fix/auth-jwt-hardening` from origin/develop 5d03acb (PR #48 merged; audited files identical)
 - Baseline commit: 8e7db4b
 - Last audited commit: 65b2d63 (checklist 7); 8f38236 (frontend checklist 3); SA-10/SA-11 fix 2887f76 on `fix/frontend-index-and-token-bar` (from origin/develop 5d03acb)
-- Working tree: TV1 commits (D13). SA-15/SA-17/SA-20 fixes live on `fix/schedule-remaining-minutes` (PR #49, head 08c6b9d, not merged)
-- Phase: COMPLETE for SA-02/SA-04/SA-10/SA-11; SA-15/SA-17/SA-20 FIXED on #49 (VERIFIED after #49 merges and post-merge build/pgTest); other items pending
+- Working tree: TV1 commits (D13). SA-15/SA-17/SA-20 fixes merged into `develop` with PR #49 as 0df1ec9 (2026-11-28 09:35Z; tree == PR head 43f8500); merge had no approving review (GOV-14)
+- Phase: COMPLETE for SA-02/SA-04/SA-10/SA-11; SA-15/SA-17/SA-20 FIXED and merged (0df1ec9); VERIFIED after the GOV-14 §7.5 option (a) check (build/pgTest on 0df1ec9 + Codex review of `git diff M S`); other items pending
 - Updated: 2026-11-28
 
 ## Coverage
@@ -106,7 +106,7 @@ Status: POTENTIAL / CONFIRMED / FALSE_POSITIVE / FIXED / VERIFIED / UNVERIFIED /
 | SA-12 | Default fetch timeout in apiRequest | Medium; slow generate calls may abort (pick timeout) | New check:api-client case | Revert commit | REJECTED / DEFERRED (TV1 2026-11-28) |
 | SA-15 | Repository method `findByUserIdAndTaskIdInAndStatusIn`; `computeRemainingMinutes` passes the task ids it computes for | Low; same result, fewer rows | Existing schedule tests (remaining minutes, HC-07) + build/pgTest | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-17 | 2 pgTest cases: concurrent generate (one PROPOSED remains, other 409), edit vs confirm (one wins, other 409, confirmed session unchanged) | Low (tests only); flakiness risk with threads | `./gradlew pgTest` | Revert commit | APPROVED (TV1 2026-11-28) |
-| SA-20 | `editSession`/`deleteSession`: `findByIdAndUserIdForUpdate` before any session write (same order as confirm); ScheduleServiceTest stubs moved to the locking method | Low; edit/delete now wait on a confirm of the same batch, then get 409 | ScheduleServiceTest (edit/delete stubs on the locking method); contract test `editDuringConfirmOfSameBatchIsRejectedAndConfirmedSessionStaysPut` (pg) | Revert commit | APPROVED (TV1 2026-11-28) |
+| SA-20 | `editSession`/`deleteSession`: `findByIdAndUserIdForUpdate` before any session write (same order as confirm); ScheduleServiceTest edit and confirm stubs moved to the locking method | Low; edit/delete now wait on a confirm of the same batch, then get 409 | ScheduleServiceTest edit cases (:126, `stubEditableBatch` :190) and confirm case (:214) stub the locking method; contract test `editDuringConfirmOfSameBatchIsRejectedAndConfirmedSessionStaysPut` (pg). No test covers the lock in `deleteSession` | Revert commit | APPROVED (TV1 2026-11-28) |
 | SA-09 | Batch user lookup | Low | Existing group tests | Revert commit | REJECTED (TV1 2026-11-28: skip) |
 
 Approval: PENDING / APPROVED / REJECTED.
@@ -127,7 +127,7 @@ Approval: PENDING / APPROVED / REJECTED.
 | IDE diagnostics (2 files) | — | PASS | index.html clean; SchedulePage.tsx 1 pre-existing Tailwind hint (`min-w-[260px]` → `min-w-65`), unchanged line, out of scope |
 | SA-15 (827b9f0, #49) | Whole session history loaded | PASS | `computeRemainingMinutes` queries only the planned task ids; ScheduleServiceTest verifies `findByUserIdAndTaskIdInAndStatusIn(1, {10}, …)`; same results in existing schedule tests |
 | SA-17 (398aa49 + 24ff666, #49) | No concurrency tests | PASS | `ScheduleServiceConcurrencyPgTests` (PostgreSQL 16). Edit vs confirm: confirm holds the proposal row lock in an open transaction; the edit must not finish within 500 ms, then exactly one wins and the other gets 409; a CONFIRMED session is never moved. Regenerate vs regenerate (24ff666; the 398aa49 barrier version was still timing-dependent, because generate re-queries the PROPOSED batch): generate 1 runs in an open transaction (old batch cancelled, row lock held); generate 2 still reads the old batch and blocks on that lock; the test waits for the lock wait in `pg_stat_activity`, then lets generate 1 commit → generate 2 gets 409 STALE_VERSION, and generate 1's batch is the only PROPOSED one. Local XML (code == 24ff666): both case names in `build/test-results/pgTest`, 0 failures/errors; class-only reruns 5× green (09:17:41–09:18:13Z) before the full run |
-| SA-20 (827b9f0, #49) | Opposite lock order | PASS (partial) | ScheduleServiceTest: edit/delete stubbed on `findByIdAndUserIdForUpdate` (unstubbed `findByIdAndUserId` returns empty → 404, so a revert fails); pg contract test passes. The deadlock interleaving itself is not reproduced: the contract test checks the outcome, not the lock order |
+| SA-20 (827b9f0, #49) | Opposite lock order | PASS (partial) | ScheduleServiceTest stubs `findByIdAndUserIdForUpdate` in the edit cases (:126, `stubEditableBatch` :190) and the confirm case (:214); for edit, an unstubbed `findByIdAndUserId` returns empty → 404, so a revert fails. The pg contract test covers edit vs confirm only. No unit or integration test reaches the lock in `deleteSession` (`confirmedSessionCannotBeEditedOrDeleted` stops at the status check); TV1 chose not to add one (2026-11-28). The deadlock interleaving itself is not reproduced: the contract test checks the outcome, not the lock order |
 | Regression #49 | H2 377, pg 167 (827b9f0) | PASS | Local (code == 24ff666), counts read from the XML on disk: full `./gradlew --offline --rerun-tasks build pgTest` run last (2026-11-28, 9/9 tasks) → `test` 26 files, 375 tests (09:18:29–09:18:40Z); `pgTest` 7 files, 169 tests (09:18:40–09:18:47Z); 0 failures/errors/skipped (2 cases moved H2 → pg). CI: 4/4 SUCCESS on #49 f161d6c (run 46129174055, code == 398aa49); CI logs have no per-test names and no report artifact, so case names come from the local XML only. The TV1-forwarded recheck used the backend XML already on the machine; it did not rerun Gradle, Docker or a production build |
 
 Result: PASS / FAIL / NOT_RUN / BLOCKED / N/A.
@@ -136,11 +136,11 @@ Result: PASS / FAIL / NOT_RUN / BLOCKED / N/A.
 
 - Completed (fixes on #49): SA-15 (827b9f0), SA-20 (827b9f0), SA-17 (398aa49)
 - Completed: DISCOVER, BASELINE (H2 build), AUDIT of auth, group, schedule, secrets, CI, frontend storage; SA-02, SA-04 fixed + verified (committed 4faab9f, 8f38236); checklist 3 frontend reviewed; checklist 7 reviewed; SA-10, SA-11 fixed + verified (2887f76)
-- Pending: review/ACCEPT/merge of PRs #49 (SA-15/SA-17/SA-20), #50 (SA-02/SA-04) and #51 (SA-10/SA-11); post-merge build/pgTest for VERIFIED; CVE scan (network approval); SA-16 re-check after #39; checklist 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
+- Pending: GOV-14 option (a) for #49 (merged 0df1ec9); review/ACCEPT/merge of PRs #50 (SA-02/SA-04) and #51 (SA-10/SA-11); post-merge build/pgTest for VERIFIED; CVE scan (network approval); SA-16 re-check after #39; checklist 8; pgTest baseline; re-audit task/availability/assignment/AI after PRs #35/#36/#39 merge
 - Approved IDs: SA-02, SA-04 (done); SA-01 → option B (deferred); SA-03 deferred; SA-09 skipped; SA-10, SA-11 (done); SA-12 deferred; SA-15, SA-17, SA-20 approved and fixed on #49; SA-16 deferred until #39 (TV1 2026-11-28)
 - Blockers: None
 - Decisions: SA-05..SA-08 treated as accepted by G7/G8/D11/CG-04/CG-11
 - Remaining risks: SA-01 brute force (accepted); SA-03 unbounded description/includeTaskIds (accepted); SA-09 N+1 (accepted); SA-12 no fetch timeout (accepted); unreviewed stub modules; dependency CVEs unknown
-- Next: merge #49, then sync this branch with `develop` (drop this branch's SEC-01 row in PROJECT_STATE.md, R50-1); then checklist 8 or CVE scan (needs approval)
+- Next: TV1 commits the #50 sync merge (origin/develop 0df1ec9 into this branch; PROJECT_STATE.md conflict resolved with develop's version, R50-1); CI + Codex recheck on the new #50 head; then checklist 8 or CVE scan (needs approval)
 
 Resume pending work. Revalidate stale evidence when relevant files, configuration, dependencies, or requirements change. Store large sanitized reports separately. Never mark untested checks as PASS.
