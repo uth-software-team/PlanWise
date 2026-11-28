@@ -55,17 +55,37 @@ function readConflicts(data: unknown): ConflictErrorDto[] {
   return conflicts.filter(isConflictErrorDto)
 }
 
+/**
+ * 400 INVALID_INPUT / INVALID_TIME_RANGE carry `data = { field: message }`. Read only for 400 and only when every
+ * value is a string; any other shape (null, `{}`, arrays, nested objects) yields no field errors.
+ */
+function readFieldErrors(status: number, data: unknown): Record<string, string> {
+  if (status !== 400 || data === null || typeof data !== 'object' || Array.isArray(data)) return {}
+  const entries = Object.entries(data as Record<string, unknown>)
+  if (!entries.every(([, value]) => typeof value === 'string')) return {}
+  return Object.fromEntries(entries) as Record<string, string>
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly conflicts: ConflictErrorDto[]
+  /** Backend message per request field (400 only); empty when the error is not tied to fields. */
+  readonly fieldErrors: Record<string, string>
 
-  constructor(status: number, code: string, message: string, conflicts: ConflictErrorDto[] = []) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    conflicts: ConflictErrorDto[] = [],
+    fieldErrors: Record<string, string> = {},
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.conflicts = conflicts
+    this.fieldErrors = fieldErrors
   }
 }
 
@@ -134,6 +154,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
       payload.code ?? 'UNKNOWN_ERROR',
       payload.message ?? `Request failed (${response.status})`,
       readConflicts(payload.data),
+      readFieldErrors(response.status, payload.data),
     )
   }
 
