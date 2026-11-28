@@ -16,8 +16,8 @@ Each recovery task needs its own TV1 approval; Claude never commits or pushes (D
 |---|---|---|---|---|---|
 | R-01 | TK-02, TK-03, TK-04 | TV3 | `feature/task-crud-takeover` (from 1a91375); original PR #35 | IMPLEMENTED | Awaiting TV1 commit/push/PR |
 | R-02 | AV-02, AV-04, AV-03, CAL-01, AV-05 | TV3 | PR #36 + #39 (one branch planned) | TODO | #36 alone breaks fixed events; merge together |
-| R-03 | AS-01, AS-02 | TV4 | — | TODO | Not started by owner |
-| R-04 | SC-05b | TV2 | — | TODO | Needs R-02, R-03 |
+| R-03 | AS-01, AS-02, AS-PG | TV4 | `feature/assignment-takeover` (worktree `../PlanWise-r03`, from 78549de) | IMPLEMENTED | Awaiting TV1 commit/push/PR |
+| R-04 | SC-05b | TV2 | — | TODO | `ScheduleService` already reads `AssignmentApi` via ObjectProvider; with R-03 the accepted ids reach `schedulableTasks`. Remaining: end-to-end generate test with a real ACCEPTED task |
 | R-05 | AS-PG (+ pg tests for task/availability) | TV4 | — | TODO | |
 | R-06 | AI-01, AI-02 | TV4 | — | TODO | C-4 applies |
 | R-07 | QA-01 | TV1 | — | TODO | After R-01..R-06 |
@@ -42,6 +42,13 @@ Status: TODO / IN_PROGRESS / IMPLEMENTED / VERIFIED / BLOCKED.
   - `./gradlew --offline --rerun-tasks build pgTest`: 9/9 tasks executed, BUILD SUCCESSFUL. XML: `test` 27 files, 376 tests, 0 failures/errors/skipped (12:25:41–12:25:53Z); `pgTest` 7 files, 169 tests, 0 failures/errors/skipped (12:25:53–12:26:01Z). Count vs develop (379): the 501 stub cases were replaced by real task tests.
   - IDE diagnostics: none in changed files.
 - Remaining: CI on the new PR; peer review (code is TV3's; TV2/TV4 review recommended even if D12 applies); close #35 after merge.
+
+## R-03 — AS-01/AS-02/AS-PG
+
+- TV1 choices (2026-11-29): assignee not an ACTIVE member or account inactive → 400 INVALID_INPUT; leader may assign to self; group list via new `TaskApi.groupTaskIds` (no cross-module SQL).
+- Behaviour: rights per request (`requireLeader`, D16); create with newTask or taskId (personal/deleted/missing → 404); BR-04 pre-check + V8 index → 409 ASSIGNMENT_ALREADY_ACTIVE; accept/decline/revoke are conditional updates (stale → 409 DATA_CONFLICT; non-assignee → 403); decline reason stripped; revoke keeps respondedAt. No notification (P1 cut).
+- Files: assignment entity/repository/service(+impl, implements `AssignmentApi`), controller wired; `TaskApi`/`TaskService`/`TaskRepository` + `groupTaskIds`; test fakes updated, `@Primary` on the test `AssignmentApi` in `ScheduleServiceIntegrationTests`; stub test renamed `AssignmentControllerContractTests` (501 case removed); new `AssignmentControllerTests` (15, incl. AS-T1), `AssignmentServiceRacePgTests` (index path), 3 AS-PG cases in `GroupAssignmentAiMigrationPgTests`.
+- Known limitations: accept/decline does not re-check that the assignee is still an ACTIVE member; an ACCEPTED group task stays TODO (option (a)).
 
 ## Blockers
 
