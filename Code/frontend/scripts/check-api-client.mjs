@@ -5,6 +5,7 @@
 //     T1–T13 with a fake fetch and fake tokens. No backend or network needed.
 //     T10 field errors (ApiError.fieldErrors), T11 safe ?redirect= (SA-13), T12 shared logout,
 //     T13 current-user store bound to the token (FE-AU).
+//     T14 group detail store: stale responses after a write, a token change or leaving the page (FE-GR-01a, B2).
 //   npm run check:api-client -- --base http://localhost:5173/api/v1
 //     I2–I3 against a running backend through that base URL. Reads PLANWISE_CHECK_TOKEN (a valid
 //     token) and PLANWISE_CHECK_EMAIL from the environment; the token is never printed.
@@ -59,7 +60,8 @@ async function load(server) {
   const auth = await server.ssrLoadModule('/src/lib/auth-token.ts')
   const session = await server.ssrLoadModule('/src/features/auth/session.ts')
   const redirect = await server.ssrLoadModule('/src/lib/safe-redirect.ts')
-  return { api, auth, session, redirect }
+  const groups = await server.ssrLoadModule('/src/features/groups/groupDetailStore.ts')
+  return { api, auth, session, redirect, groups }
 }
 
 // ---------- fake fetch ----------
@@ -73,10 +75,36 @@ function useFakeFetch(handler) {
   respond = handler
   globalThis.fetch = async (url, init = {}) => {
     const auth = new Headers(init.headers).get('Authorization')
-    calls.push({ url: String(url), auth })
-    return respond({ url: String(url), auth })
+    const method = init.method ?? 'GET'
+    calls.push({ url: String(url), auth, method })
+    return respond({ url: String(url), auth, method })
   }
 }
+
+/** A response the test releases later: `gate.release(response)`. */
+function deferred() {
+  let release
+  const promise = new Promise((resolve) => (release = resolve))
+  return { promise, release }
+}
+
+const groupBody = (name, memberEmails) =>
+  json(200, {
+    success: true,
+    data: {
+      id: 7,
+      groupName: name,
+      members: memberEmails.map((email, index) => ({
+        userId: index + 1,
+        email,
+        role: index === 0 ? 'LEADER' : 'MEMBER',
+        status: 'ACTIVE',
+      })),
+    },
+  })
+const memberCreated = () =>
+  json(201, { success: true, data: { userId: 9, role: 'MEMBER', status: 'ACTIVE' } })
+const forbidden = () => json(403, { success: false, code: 'FORBIDDEN', message: 'Forbidden' })
 
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -446,6 +474,247 @@ async function unitChecks() {
           expectEqual(session.getCurrentUserSnapshot().user?.fullName, 'New', 'name after the PUT')
         } finally {
           unsubscribe()
+        }
+      },
+    )
+
+    // ---------- T14: group detail store (FE-GR-01a, rules B2) ----------
+
+    const isGet = (req) => req.method === 'GET' && req.url.endsWith('/groups/7')
+    const isPost = (req) => req.method === 'POST' && req.url.endsWith('/groups/7/members')
+    const emailsOf = (snapshot) =>
+      snapshot.detail.status === 'ready' ? snapshot.detail.group.members.map((m) => m.email) : null
+
+    await check(
+      'T14a',
+      'groups: an older GET released after add + reload cannot undo the add',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { groups } = await load(server)
+        const firstGet = deferred()
+        let gets = 0
+        useFakeFetch((req) => {
+          if (isPost(req)) return memberCreated()
+          if (isGet(req)) {
+            gets += 1
+            return gets === 1 ? firstGet.promise : groupBody('G', ['a@x', 'b@x'])
+          }
+          return json(500, { success: false })
+        })
+        try {
+          groups.openGroup(7)
+          await settle()
+          expectEqual((await groups.addMember('b@x')).status, 'ok', 'add result')
+          firstGet.release(groupBody('G', ['a@x']))
+          await settle()
+          expectEqual(
+            JSON.stringify(emailsOf(groups.getGroupDetailSnapshot())),
+            JSON.stringify(['a@x', 'b@x']),
+            'members after the late first GET',
+          )
+        } finally {
+          groups.closeGroup()
+        }
+      },
+    )
+
+    await check(
+      'T14b',
+      'groups: a token change clears the group at once and drops the old GET',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { groups, auth } = await load(server)
+        const getA = deferred()
+        const getB = deferred()
+        useFakeFetch((req) => (req.auth === 'Bearer fake-a' ? getA.promise : getB.promise))
+        try {
+          groups.openGroup(7)
+          auth.setToken('fake-b')
+          expectEqual(
+            groups.getGroupDetailSnapshot().detail.status,
+            'loading',
+            'status after switch',
+          )
+          getA.release(groupBody('Group of A', ['a@x']))
+          await settle()
+          expectEqual(
+            groups.getGroupDetailSnapshot().detail.status,
+            'loading',
+            'status after late A',
+          )
+          getB.release(groupBody('Group of B', ['b@x']))
+          await settle()
+          const detail = groups.getGroupDetailSnapshot().detail
+          expectEqual(
+            detail.status === 'ready' && detail.group.groupName,
+            'Group of B',
+            'group shown',
+          )
+        } finally {
+          groups.closeGroup()
+        }
+      },
+    )
+
+    for (const outcome of ['success', '403']) {
+      await check(
+        'T14c',
+        `groups: A's pending add (${outcome}) does nothing after switching to B`,
+        async () => {
+          reset({ [KEY]: 'fake-a' })
+          const { groups, auth } = await load(server)
+          const postA = deferred()
+          useFakeFetch((req) => {
+            if (isPost(req)) return postA.promise
+            return req.auth === 'Bearer fake-a'
+              ? groupBody('Group of A', ['a@x'])
+              : groupBody('Group of B', ['b@x'])
+          })
+          try {
+            groups.openGroup(7)
+            await settle()
+            const pending = groups.addMember('c@x')
+            auth.setToken('fake-b')
+            await settle()
+            const fetchCount = calls.length
+            const counter = groups.getLoadCounter()
+            postA.release(outcome === 'success' ? memberCreated() : forbidden())
+            expectEqual((await pending).status, 'stale', 'add result')
+            await settle()
+            expectEqual(calls.length, fetchCount, 'requests after the stale add')
+            expectEqual(groups.getLoadCounter(), counter, 'GET counter')
+            const snapshot = groups.getGroupDetailSnapshot()
+            expectEqual(snapshot.detail.group?.groupName, 'Group of B', 'group shown')
+            expectEqual(snapshot.pendingWrite, false, 'pendingWrite')
+          } finally {
+            groups.closeGroup()
+          }
+        },
+      )
+    }
+
+    await check(
+      'T14d',
+      'groups: an add sent before leaving and reopening the page is dropped',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { groups } = await load(server)
+        const post = deferred()
+        let gets = 0
+        useFakeFetch((req) => {
+          if (isPost(req)) return post.promise
+          gets += 1
+          return groupBody(`G${gets}`, ['a@x'])
+        })
+        try {
+          groups.openGroup(7)
+          await settle()
+          const pending = groups.addMember('b@x')
+          groups.closeGroup()
+          groups.openGroup(7)
+          await settle()
+          post.release(memberCreated())
+          expectEqual((await pending).status, 'stale', 'add result')
+          await settle()
+          expectEqual(gets, 2, 'GETs (first open + reopen only)')
+          const snapshot = groups.getGroupDetailSnapshot()
+          expectEqual(snapshot.detail.group?.groupName, 'G2', 'group of the reopened page')
+          expectEqual(snapshot.pendingWrite, false, 'pendingWrite')
+        } finally {
+          groups.closeGroup()
+        }
+      },
+    )
+
+    for (const outcome of ['success', '403']) {
+      await check(
+        'T14e',
+        `groups: the reload after an add (${outcome}) is dropped once the page closed`,
+        async () => {
+          reset({ [KEY]: 'fake-a' })
+          const { groups } = await load(server)
+          const reloadGet = deferred()
+          let gets = 0
+          useFakeFetch((req) => {
+            if (isPost(req)) return memberCreated()
+            gets += 1
+            return gets === 1 ? groupBody('G', ['a@x']) : reloadGet.promise
+          })
+          try {
+            groups.openGroup(7)
+            await settle()
+            const pending = groups.addMember('b@x')
+            await settle()
+            expectEqual(gets, 2, 'reload GET started')
+            groups.closeGroup()
+            const before = groups.getGroupDetailSnapshot()
+            reloadGet.release(outcome === 'success' ? groupBody('G', ['a@x', 'b@x']) : forbidden())
+            expectEqual((await pending).status, 'stale', 'add result')
+            await settle()
+            const after = groups.getGroupDetailSnapshot()
+            expectEqual(after, before, 'snapshot object after the late reload')
+            expectEqual(after.detail.status, 'idle', 'status')
+            expectEqual(after.pendingWrite, false, 'pendingWrite')
+          } finally {
+            groups.closeGroup()
+          }
+        },
+      )
+    }
+
+    await check(
+      'T14f',
+      'groups: a second add while one is in flight is busy until its reload ends',
+      async () => {
+        reset({ [KEY]: 'fake-a' })
+        const { groups } = await load(server)
+        const firstPost = deferred()
+        const reloadGet = deferred()
+        let posts = 0
+        let gets = 0
+        useFakeFetch((req) => {
+          if (isPost(req)) {
+            posts += 1
+            return posts === 1 ? firstPost.promise : memberCreated()
+          }
+          gets += 1
+          return gets === 2 ? reloadGet.promise : groupBody('G', ['a@x'])
+        })
+        try {
+          groups.openGroup(7)
+          await settle()
+          const first = groups.addMember('x@x')
+          expectEqual(
+            (await groups.addMember('y@x')).status,
+            'busy',
+            'second add while POST pending',
+          )
+          expectEqual(posts, 1, 'POSTs sent')
+          expectEqual(
+            groups.getGroupDetailSnapshot().pendingWrite,
+            true,
+            'pendingWrite during POST',
+          )
+          firstPost.release(memberCreated())
+          await settle()
+          expectEqual(gets, 2, 'reload GET started')
+          expectEqual(
+            groups.getGroupDetailSnapshot().pendingWrite,
+            true,
+            'pendingWrite during reload',
+          )
+          expectEqual((await groups.addMember('y@x')).status, 'busy', 'second add during reload')
+          reloadGet.release(groupBody('G', ['a@x', 'x@x']))
+          expectEqual((await first).status, 'ok', 'first add result')
+          expectEqual(
+            groups.getGroupDetailSnapshot().pendingWrite,
+            false,
+            'pendingWrite after reload',
+          )
+          expectEqual((await groups.addMember('y@x')).status, 'ok', 'second add afterwards')
+          expectEqual(posts, 2, 'POSTs sent in total')
+        } finally {
+          groups.closeGroup()
         }
       },
     )
