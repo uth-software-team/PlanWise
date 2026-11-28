@@ -53,3 +53,48 @@ export function addMemberErrorOf(error: unknown): string {
       return `Không thêm được thành viên (${error.status}). Vui lòng thử lại.`
   }
 }
+
+/** LEADER removes a MEMBER. The group was reloaded for 403/404/409 before this is shown. */
+export function removeMemberErrorOf(error: unknown): string {
+  if (!(error instanceof ApiError)) return NETWORK
+  switch (error.code) {
+    case 'FORBIDDEN':
+      return 'Bạn không còn là trưởng nhóm. Thông tin nhóm đã được tải lại.'
+    case 'RESOURCE_NOT_FOUND':
+      return 'Người này không còn trong nhóm. Danh sách đã được tải lại.'
+    case 'DATA_CONFLICT':
+      return 'Không thể xóa trưởng nhóm.'
+    default:
+      return `Không xóa được thành viên (${error.status}). Vui lòng thử lại.`
+  }
+}
+
+/** LEADER hands leadership over. The group was reloaded for 403/404/409 before this is shown. */
+export function transferErrorOf(error: unknown): string {
+  if (!(error instanceof ApiError)) return NETWORK
+  switch (error.code) {
+    case 'FORBIDDEN':
+      return 'Bạn không còn là trưởng nhóm. Thông tin nhóm đã được tải lại.'
+    case 'RESOURCE_NOT_FOUND':
+      return 'Người này không còn đủ điều kiện nhận quyền. Danh sách đã được tải lại.'
+    case 'DATA_CONFLICT':
+      return 'Không thể chuyển quyền cho chính mình.'
+    default:
+      return `Không chuyển được quyền (${error.status}). Vui lòng thử lại.`
+  }
+}
+
+/** Leaving the group. The group was reloaded for 403/404/409 (incl. STALE_VERSION) before this is shown. */
+export function leaveErrorOf(error: unknown): string {
+  if (!(error instanceof ApiError)) return NETWORK
+  switch (error.code) {
+    case 'STALE_VERSION':
+      return 'Thông tin nhóm vừa thay đổi. Vui lòng xem lại nội dung bên dưới rồi xác nhận lần nữa.'
+    case 'DATA_CONFLICT':
+      return 'Nhóm chưa có ai nhận được quyền trưởng nhóm. Hãy thêm thành viên trước khi rời nhóm.'
+    case 'FORBIDDEN':
+      return 'Bạn không còn là thành viên của nhóm.'
+    default:
+      return `Không rời được nhóm (${error.status}). Vui lòng thử lại.`
+  }
+}

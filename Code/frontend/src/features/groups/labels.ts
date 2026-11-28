@@ -12,3 +12,22 @@ export function initialsOf(name: string | undefined): string {
   const letters = words.length === 1 ? [words[0]] : [words[0], words[words.length - 1]]
   return letters.map((word) => Array.from(word)[0].toUpperCase()).join('')
 }
+
+type MemberLike = { userId?: number; fullName?: string; email?: string }
+
+/** Display name of a member: full name, else email, else a neutral fallback. */
+export function memberName(member: MemberLike | undefined, fallback = 'Thành viên'): string {
+  return member?.fullName || member?.email || fallback
+}
+
+/**
+ * Name of the member who becomes LEADER when the LEADER leaves (`GroupResponse.successorUserId`, D16).
+ * "một thành viên khác" when the id is missing from `members` or the member has no name and no email.
+ */
+export function successorNameOf(group: {
+  successorUserId?: number | null
+  members?: MemberLike[]
+}): string {
+  const member = (group.members ?? []).find((m) => m.userId === group.successorUserId)
+  return memberName(member, 'một thành viên khác')
+}

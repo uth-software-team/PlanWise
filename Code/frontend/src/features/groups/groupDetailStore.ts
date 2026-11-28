@@ -3,7 +3,14 @@ import { useSyncExternalStore } from 'react'
 import { ApiError } from '@/lib/apiClient'
 import { getToken, subscribeToken } from '@/lib/auth-token'
 
-import { addMember as postMember, getGroup, type GroupDetail } from './api/groupsApi'
+import {
+  addMember as postMember,
+  deleteMember,
+  getGroup,
+  leaveGroup as deleteSelf,
+  transferLeadership as postTransfer,
+  type GroupDetail,
+} from './api/groupsApi'
 
 /**
  * State of the group detail page (FE-GR-01, rules B2). A response is applied only while the context it was sent
@@ -125,40 +132,98 @@ export function reloadGroup(): void {
   void load(currentContext(openGroupId))
 }
 
+/** What a successful write does next: reload the group, or nothing (it already updated state or left the page). */
+type AfterSuccess = 'reload' | 'done'
+
 /**
- * Adds a member by email (B2 steps WG, W0–W5). `pendingWrite` stays true until the reload that follows the write
- * has finished, so the next write sees the new state. A result for a context that is no longer current is dropped
- * without touching state.
+ * One group write (B2 steps WG, W0–W5), shared by every action so they follow the same rules:
+ * - WG: while a write and its reload are in flight, another write answers `busy` and sends nothing.
+ * - W1: once the request ends, a context that is no longer current (other page, group or account) drops the result.
+ * - W2/W3: success, or 403/404/409 (incl. STALE_VERSION), reloads the group before `pendingWrite` is released, so
+ *   the next write sees the new state; an older GET still in flight can no longer win.
+ * - W4: other errors (400, network) release `pendingWrite` at once.
+ * - W5: after the reload, the context is checked again.
  */
-export async function addMember(email: string): Promise<WriteResult> {
+async function runWrite<T>(
+  send: (groupId: number) => Promise<T>,
+  onSuccess: (value: T) => AfterSuccess,
+): Promise<WriteResult> {
   if (snapshot.pendingWrite) return { status: 'busy' } // WG
   const groupId = openGroupId
   if (groupId === null) return { status: 'stale' }
 
   const ctx = currentContext(groupId) // W0
   setSnapshot({ ...snapshot, pendingWrite: true })
-  let failure: { error: unknown } | null = null
+  let outcome: { ok: true; value: T } | { ok: false; error: unknown }
   try {
-    await postMember(groupId, email)
+    outcome = { ok: true, value: await send(groupId) }
   } catch (error) {
-    failure = { error }
+    outcome = { ok: false, error }
   }
 
   if (!isCurrent(ctx)) return { status: 'stale' } // W1
 
-  const reload =
-    failure === null ||
-    (failure.error instanceof ApiError && [403, 404, 409].includes(failure.error.status))
-  if (!reload) {
-    setSnapshot({ ...snapshot, pendingWrite: false }) // W4
-    return { status: 'error', error: failure?.error }
+  if (!outcome.ok) {
+    const error = outcome.error
+    if (!(error instanceof ApiError && [403, 404, 409].includes(error.status))) {
+      setSnapshot({ ...snapshot, pendingWrite: false }) // W4
+      return { status: 'error', error }
+    }
   }
 
-  latest += 1 // W2/W3: an older GET still in flight can no longer win
+  latest += 1 // W2/W3
+  if (outcome.ok && onSuccess(outcome.value) === 'done') return { status: 'ok' }
   await load(ctx)
   if (!isCurrent(ctx)) return { status: 'stale' } // W5
   setSnapshot({ ...snapshot, pendingWrite: false })
-  return failure === null ? { status: 'ok' } : { status: 'error', error: failure.error }
+  return outcome.ok ? { status: 'ok' } : { status: 'error', error: outcome.error }
+}
+
+/** LEADER adds an account as MEMBER by email; the group is reloaded. */
+export function addMember(email: string): Promise<WriteResult> {
+  return runWrite(
+    (groupId) => postMember(groupId, email),
+    () => 'reload',
+  )
+}
+
+/** LEADER removes a MEMBER (FE-GR-01b); the group is reloaded. */
+export function removeMember(userId: number): Promise<WriteResult> {
+  return runWrite(
+    (groupId) => deleteMember(groupId, userId),
+    () => 'reload',
+  )
+}
+
+/** LEADER hands leadership to `newLeaderUserId`; the returned group is applied directly (no extra GET). */
+export function transferLeadership(newLeaderUserId: number): Promise<WriteResult> {
+  return runWrite(
+    (groupId) => postTransfer(groupId, newLeaderUserId),
+    (group) => {
+      setSnapshot({ detail: { status: 'ready', group }, pendingWrite: false })
+      return 'done'
+    },
+  )
+}
+
+/**
+ * The caller leaves the group. A MEMBER sends no successor; the LEADER sends the `successorUserId` shown in the
+ * dialog (D16). On success `onLeft` runs at once (navigate to /groups), with nothing awaited in between;
+ * `pendingWrite` stays set until the page closes. A request that ends after the page, group or account changed
+ * never calls `onLeft`.
+ */
+export function leaveGroup(
+  myUserId: number,
+  expectedSuccessorUserId: number | undefined,
+  onLeft: () => void,
+): Promise<WriteResult> {
+  return runWrite(
+    (groupId) => deleteSelf(groupId, myUserId, expectedSuccessorUserId),
+    () => {
+      onLeft()
+      return 'done'
+    },
+  )
 }
 
 export function subscribeGroupDetail(listener: () => void): () => void {
@@ -170,7 +235,7 @@ export function getGroupDetailSnapshot(): GroupDetailSnapshot {
   return snapshot
 }
 
-/** Number of GETs started so far (checks T14c/T14e use it to prove a dropped write started no reload). */
+/** Number of GETs started so far (checks T14/T15 use it to prove a dropped write started no reload). */
 export function getLoadCounter(): number {
   return latest
 }

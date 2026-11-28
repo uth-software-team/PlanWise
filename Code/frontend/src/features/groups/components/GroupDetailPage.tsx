@@ -1,19 +1,45 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronLeft, RefreshCw } from 'lucide-react'
+import { ChevronLeft, Crown, LogOut, RefreshCw, UserMinus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useCurrentUser } from '@/features/auth/session'
 
-import { isLeaderOf } from '../api/groupsApi'
-import { loadErrorOf } from '../errors'
-import { openGroup, reloadGroup, useGroupDetail } from '../groupDetailStore'
+import { isLeaderOf, type GroupMember } from '../api/groupsApi'
+import { loadErrorOf, removeMemberErrorOf, transferErrorOf } from '../errors'
+import {
+  openGroup,
+  reloadGroup,
+  removeMember,
+  transferLeadership,
+  useGroupDetail,
+  type WriteResult,
+} from '../groupDetailStore'
 import { roleLabel } from '../labels'
 import { AddMemberForm } from './AddMemberForm'
+import { ConfirmDialog } from './ConfirmDialog'
 import { Initials } from './Initials'
+import { LeaveGroupDialog } from './LeaveGroupDialog'
 import { MemberList } from './MemberList'
 
 const MEMBERS_HEADING_ID = 'members-heading'
+
+type MemberAction = { kind: 'transfer' | 'remove'; member: GroupMember; name: string }
+
+/** Focus target when the control that opened a dialog is gone (its row, or every LEADER control). */
+function membersHeading(): HTMLElement | null {
+  return document.getElementById(MEMBERS_HEADING_ID)
+}
+
+/** Message for a finished write: null = success, undefined = dropped (another page/account), else the error. */
+function messageOf(
+  result: WriteResult,
+  errorText: (error: unknown) => string,
+): string | null | undefined {
+  if (result.status === 'ok') return null
+  if (result.status === 'error') return errorText(result.error)
+  return undefined
+}
 
 /** Parses the :groupId route param; anything but a positive integer is "not found" without a request. */
 function parseGroupId(raw: string | undefined): number | null {
@@ -79,6 +105,15 @@ function GroupMessage({ message, onRetry }: { message: string; onRetry?: () => v
 function GroupDetailView() {
   const { detail, pendingWrite } = useGroupDetail()
   const currentUser = useCurrentUser()
+  // The last chosen action stays set while the dialog closes, so Radix can return focus before unmount.
+  const [action, setAction] = useState<MemberAction | null>(null)
+  const [actionOpen, setActionOpen] = useState(false)
+
+  function openAction(next: MemberAction) {
+    setAction(next)
+    setActionOpen(true)
+  }
+  const [leaveOpen, setLeaveOpen] = useState(false)
 
   if (detail.status === 'idle' || detail.status === 'loading') {
     return (
@@ -107,6 +142,42 @@ function GroupDetailView() {
   const isLeader = isLeaderOf(group, myId)
   const myRole = members.find((member) => member.userId === myId)?.role
 
+  function renderLeaderActions(member: GroupMember, name: string) {
+    if (!isLeader || member.userId === myId || member.userId === undefined) return null
+    return (
+      <span className="flex w-full justify-end gap-2 sm:w-auto">
+        <Button
+          variant="outline"
+          className="h-11"
+          disabled={pendingWrite}
+          aria-label={`Chuyển quyền trưởng nhóm cho ${name}`}
+          onClick={() => openAction({ kind: 'transfer', member, name })}
+        >
+          <Crown aria-hidden="true" />
+          Chuyển quyền
+        </Button>
+        <Button
+          variant="outline"
+          className="h-11 text-destructive hover:text-destructive"
+          disabled={pendingWrite}
+          aria-label={`Xóa ${name} khỏi nhóm`}
+          onClick={() => openAction({ kind: 'remove', member, name })}
+        >
+          <UserMinus aria-hidden="true" />
+          Xóa
+        </Button>
+      </span>
+    )
+  }
+
+  async function confirmAction(current: MemberAction): Promise<string | null | undefined> {
+    const userId = current.member.userId as number
+    if (current.kind === 'transfer') {
+      return messageOf(await transferLeadership(userId), transferErrorOf)
+    }
+    return messageOf(await removeMember(userId), removeMemberErrorOf)
+  }
+
   return (
     <section aria-labelledby="page-title" className="mx-auto w-full max-w-6xl">
       <BackLink />
@@ -128,6 +199,17 @@ function GroupDetailView() {
           </div>
           {group.description && <p className="mt-1 text-muted-foreground">{group.description}</p>}
         </div>
+        {myId !== undefined && myRole && (
+          <Button
+            variant="outline"
+            className="ml-auto h-11 text-destructive hover:text-destructive"
+            disabled={pendingWrite}
+            onClick={() => setLeaveOpen(true)}
+          >
+            <LogOut aria-hidden="true" />
+            Rời nhóm
+          </Button>
+        )}
       </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
@@ -141,7 +223,11 @@ function GroupDetailView() {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">{members.length} người trong nhóm</p>
           <div className="mt-4">
-            <MemberList members={members} headingId={MEMBERS_HEADING_ID} />
+            <MemberList
+              members={members}
+              headingId={MEMBERS_HEADING_ID}
+              renderActions={renderLeaderActions}
+            />
           </div>
         </div>
 
@@ -154,6 +240,43 @@ function GroupDetailView() {
           </div>
         )}
       </div>
+
+      {action && (
+        <ConfirmDialog
+          open={actionOpen}
+          onOpenChange={setActionOpen}
+          title={action.kind === 'transfer' ? 'Chuyển quyền trưởng nhóm' : 'Xóa thành viên'}
+          confirmLabel={action.kind === 'transfer' ? 'Chuyển quyền' : 'Xóa khỏi nhóm'}
+          destructive={action.kind === 'remove'}
+          busy={pendingWrite}
+          onConfirm={() => confirmAction(action)}
+          focusFallback={membersHeading}
+        >
+          <p className="text-sm text-foreground">
+            {action.kind === 'transfer' ? (
+              <>
+                <strong className="font-semibold">{action.name}</strong> sẽ trở thành trưởng nhóm.
+                Sau khi chuyển, bạn sẽ trở thành thành viên.
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold">{action.name}</strong> sẽ không còn xem được nhóm.
+                Bạn có thể thêm lại sau.
+              </>
+            )}
+          </p>
+        </ConfirmDialog>
+      )}
+
+      {myId !== undefined && (
+        <LeaveGroupDialog
+          open={leaveOpen}
+          onOpenChange={setLeaveOpen}
+          group={group}
+          myUserId={myId}
+          busy={pendingWrite}
+        />
+      )}
     </section>
   )
 }
